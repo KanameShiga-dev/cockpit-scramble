@@ -406,6 +406,14 @@ function modelTitan() { // TX-0: tracked heavy walker with arm cannons and a che
   for (let i = 0; i < 4; i++) seg(m, [-1.6, 7 + i, -4.45], [1.6, 7 + i, -4.45]); // cooling fins
   return m;
 }
+function modelCooler() { // coolant tank: weak point of the giant cannon
+  const m = mdl();
+  pod(m, 'y', [0, 0, 0], [0, 8, 0], 5, 5, 5, 5, 12, TUBE);
+  for (const y of [2, 4, 6]) poly(m, circ('y', [0, y, 0], 2.62, 12));
+  Vb(m, 0, 0, 8, 9.6, 3, 3, 2, 2, 0.3);
+  both(s => Vb(m, s * 3.2, 0, 1, 7, 0.6, 4, 0.6, 3.6, 0.2));
+  return m;
+}
 function modelFortress() { // FX-9: ring fortress with core hangars and four turrets
   const m = mdl(), R = 34, n = 16, TAU = 2 * Math.PI;
   const at = (a, r, y) => [r * Math.cos(a), y, r * Math.sin(a)];
@@ -484,12 +492,15 @@ const ENEMY = {
   vespa: { name: 'VX-3 ヴェスパ', role: '高機動型', size: '全高 17.6 m', weapon: 'ビームクロー', hp: 40, speed: 1.8, dmg: 9, fireCd: 2.2, range: 180, prefers: 'near', score: 150, model: modelFast(), yc: 9, scale: 1.5 },
   hawk:  { name: 'HK-9 ホーク', role: '砲撃型', size: '全高 21.0 m', weapon: '長距離砲', hp: 120, speed: 0.6, dmg: 12, fireCd: 4.6, range: 1200, prefers: 'far', score: 250, model: modelHeavy(), yc: 9, scale: 1.5 },
   titan: { name: 'TX-0 タイタン', role: '大型陸戦機', size: '全高 63 m', weapon: '大口径ビーム砲×3', hp: 700, speed: 0.35, dmg: 11, fireCd: 3.4, volley: 3, range: 1200, prefers: 'mid', score: 3000, model: modelTitan(), yc: 7, scale: 4.5, boss: true },
+  colossus: { name: 'GX-1 ゴライアス砲', role: '巨大砲台', size: '全高 80 m', weapon: '大口径荷電粒子砲', hp: 900, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 4000, model: modelTitan(), yc: 7, scale: 6, boss: true, fixed: true, core: true, shielded: true, art: 'titan' },
+  cooler: { name: '冷却装置', role: '砲台の弱点', size: '全高 12 m', weapon: 'なし', hp: 160, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 500, model: modelCooler(), yc: 4, scale: 1.5, fixed: true, cooler: true },
   fort:  { name: 'FX-9 ハイヴ', role: '宇宙要塞', size: '全幅 100 m', weapon: '砲台×4・艦載機', hp: 1200, speed: 0.15, dmg: 9, fireCd: 3.0, volley: 4, range: 1200, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 1.5, boss: true, spawns: true }
 };
 for (const T of Object.values(ENEMY)) T.rad = Math.max(...T.model.v.map(v => Math.hypot(v[0], v[1] - T.yc, v[2])));
 const STAGES = [
   { kind: 'ground', name: '地上戦域', waves: 3, boss: 'titan', pools: [['garm'], ['garm', 'garm', 'vespa'], ['garm', 'vespa', 'hawk']] },
-  { kind: 'space', name: '宇宙戦域', waves: 3, boss: 'fort', pools: [['vespa', 'garm'], ['vespa', 'garm', 'hawk'], ['vespa', 'hawk', 'garm', 'vespa']] }
+  { kind: 'space', name: '宇宙戦域', waves: 3, boss: 'fort', pools: [['vespa', 'garm'], ['vespa', 'garm', 'hawk'], ['vespa', 'hawk', 'garm', 'vespa']] },
+  { kind: 'ground', name: '巨大兵器破壊', waves: 0, mission: 'weapon', time: 180, escorts: ['garm', 'hawk'] }
 ];
 const PARTS = ['左脚', '右脚', '左腕', '頭部', '右腕'];
 
@@ -631,7 +642,8 @@ function startWave() {
   const st = stage();
   game.gw++; game.waveInStage++;
   game.bossWave = game.waveInStage > st.waves;
-  if (game.bossWave) {
+  if (st.mission) startMission(st);
+  else if (game.bossWave) {
     const b = spawn(st.boss);
     spawn(st.kind === 'space' ? 'vespa' : 'garm'); spawn('garm');
     game.announce = { text: `警告　${b.T.name} 接近`, t: 2.8, col: BANDC.near };
@@ -644,7 +656,48 @@ function startWave() {
   }
   game.fuel = Math.min(100, game.fuel + 30);
 }
+// Giant weapon mission: a fixed cannon shielded by two coolant tanks; it charges a main shot
+// (locks on for 2 s, heavy damage unless evaded). Fails when the time runs out.
+function startMission(st) {
+  game.mission = { kind: st.mission, time: st.time * (1 - 0.1 * Math.min(game.loop, 3)), charge: 0, escortT: 6, done: false, armorMsgT: 0 };
+  const az = (view.h + rnd(-50, 50) + 360) % 360, place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0 });
+  place(spawn('colossus'), 0, 7, 720);
+  place(spawn('cooler'), -5, 2.5, 650); place(spawn('cooler'), 5, 2.5, 650);
+  spawn('garm'); spawn('garm');
+  game.announce = { text: '作戦目標：巨大砲台の破壊', t: 3.2, col: BANDC.near };
+  say('冷却装置2基を破壊すると、巨大砲台の装甲が弱まります。主砲の発射前に回避を。');
+  SFX.alarm();
+}
+function updateMission(dt) {
+  const M = game.mission;
+  if (!M || M.done) return;
+  M.time -= dt; M.armorMsgT -= dt;
+  if (M.time <= 0) { missionFailed('制限時間切れ。巨大砲台の発射を許しました。'); return; }
+  const col = game.enemies.find(e => e.T.core), coolers = game.enemies.filter(e => e.T.cooler).length;
+  if (col && !(col.lockT > 0)) { // lockT is unset until the first lock
+    M.charge += dt * (coolers ? 5 : 3.5) * (1 + 0.15 * game.loop);
+    if (M.charge >= 100) { M.charge = 0; col.lockT = col.lockMax = 2.0; col.mega = true; SFX.lockon(); game.announce = { text: '巨大砲台　主砲発射態勢', t: 2.0, col: BANDC.near }; }
+  }
+  M.escortT -= dt;
+  if (M.escortT <= 0) { M.escortT = 11; if (game.enemies.filter(e => !e.T.fixed).length < 3) spawn(stage().escorts[Math.floor(Math.random() * 2)]); }
+}
+function megaShot(e) {
+  e.flash = 0.8; game.shake = 1;
+  game.fx.push({ type: 'incoming', e, t: 0, dur: 0.6 });
+  SFX.cannon();
+  damagePlayer(30 * (1 + 0.2 * game.loop));
+  say('巨大砲台の主砲が直撃。');
+}
+function missionFailed(why) {
+  game.state = 'over'; game.locks = []; game.selected = null; game.evade = null;
+  SFX.boom(true);
+  $('#bootTitle').textContent = '作戦失敗';
+  $('#bootText').textContent = `${stage().name}：${why} スコア ${game.score}。機体を選んで再出撃できます。`;
+  $('#bBoot').textContent = '再出撃';
+  setTimeout(() => { $('#boot').hidden = false; }, 900);
+}
 function stageClear() {
+  game.mission = null;
   game.announce = { text: `${stage().name} 制圧`, t: 2.6 };
   SFX.clear();
   game.stageIdx++;
@@ -659,7 +712,7 @@ function resetSortie() {
   Object.assign(game, { stageIdx: 0, loop: 0, waveInStage: 0, gw: 0, score: 0,
     armorMax: game.m.armor, armor: game.m.armor, en: 100, fuel: 100, broken: 0,
     enemies: [], fx: [], selected: null, locks: [], cd: { near: 0, mid: 0, far: 0 },
-    dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null, evade: null, quitT: 0 });
+    dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null, evade: null, quitT: 0, mission: null });
 }
 function startGame() {
   resetSortie();
@@ -715,7 +768,10 @@ function update(dt) {
   if (game.armor / game.armorMax < 0.3) SFX.warn();
 
   const er = elRange();
+  updateMission(dt);
+  if (game.state !== 'play') return;
   for (const e of game.enemies) {
+    if (!e.T.fixed) {
     if (e.knock) {
       e.knock.t += dt;
       const k = Math.min(1, e.knock.t / e.knock.dur), s = 1 - Math.pow(1 - k, 3);
@@ -742,13 +798,14 @@ function update(dt) {
     e.el += clamp(e.elT - e.el, -(e.mode === 'evade' ? 12 : 4) * dt, (e.mode === 'evade' ? 12 : 4) * dt);
     if (Math.abs(e.elT - e.el) < 0.5) e.elT = rnd(er[0], er[1]);
     e.el = clamp(e.el, er[0] - 1, er[1] + 1);
+    }
     e.flash = Math.max(0, e.flash - dt); e.hurt = Math.max(0, e.hurt - dt);
     if (e.lockT > 0) { // locked on: fires when the lock completes unless the pilot breaks it by evading
       e.lockT -= dt;
-      if (e.lockT <= 0) { e.lockT = 0; if (e.dist <= e.T.range) enemyFire(e); }
+      if (e.lockT <= 0) { e.lockT = 0; if (e.mega) { e.mega = false; megaShot(e); } else if (e.dist <= e.T.range) enemyFire(e); }
     } else {
       e.fireCd -= dt;
-      if (e.fireCd <= 0) { e.fireCd = e.T.fireCd * rnd(.8, 1.3); if (e.dist <= e.T.range && e.mode !== 'ambush') { e.lockT = e.T.boss ? 1.4 : 1.1; SFX.lockon(); } }
+      if (e.fireCd <= 0) { e.fireCd = e.T.fireCd * rnd(.8, 1.3); if (e.dist <= e.T.range && e.mode !== 'ambush') { e.lockT = e.lockMax = e.T.boss ? 1.4 : 1.1; SFX.lockon(); } }
     }
     if (e.T.spawns) { e.spawnT -= dt; if (e.spawnT <= 0 && game.enemies.length < 6) { e.spawnT = rnd(12, 16); spawn(Math.random() < .6 ? 'vespa' : 'garm', e); say('要塞から艦載機が発進。'); } }
   }
@@ -826,10 +883,15 @@ function fireAt(w, targets, band) {
       game.fx.push({ type: 'text', P, text: '回避', t: 0, dur: 0.7, col: BANDC.mid });
       SFX.dodge(); return;
     }
+    if (e.T.shielded && game.enemies.some(x => x.T.cooler)) {
+      game.fx.push({ type: 'text', P, text: '装甲', t: 0, dur: 0.5, col: BANDC.mid });
+      if (game.mission && game.mission.armorMsgT <= 0) { game.mission.armorMsgT = 4; say('装甲に阻まれました。先に冷却装置を破壊してください。'); }
+      return;
+    }
     e.hp -= w.dmg * (band === 'near' && brokenPart(2) ? 0.6 : 1);
     e.hurt = 0.12;
     game.fx.push({ type: 'spark', P, t: 0, dur: 0.3, a: Math.random() * 6.28, big: w.dmg >= 50 });
-    if (band === 'near') { e.knock = { from: e.dist, to: Math.min(e.dist + (e.T.boss ? 30 : 70), MID - 20), t: 0, dur: 0.5 }; game.shake = Math.min(1, game.shake + 0.25); }
+    if (band === 'near' && !e.T.fixed) { e.knock = { from: e.dist, to: Math.min(e.dist + (e.T.boss ? 30 : 70), MID - 20), t: 0, dur: 0.5 }; game.shake = Math.min(1, game.shake + 0.25); }
     else if (!e.T.boss && e.mode === 'assault' && Math.random() < 0.25) { e.mode = 'evade'; e.modeT = 2.5; }
     if (e.hp <= 0) kill(e);
   });
@@ -852,6 +914,8 @@ function kill(e) {
   SFX.boom(!!T.boss);
   if (T.boss) { game.shake = 1; game.announce = { text: `${T.name} 撃破`, t: 2.4 }; }
   say(`${T.name} 撃墜。`);
+  if (T.cooler && !game.enemies.some(x => x.T.cooler)) { game.announce = { text: '冷却装置 全基破壊　装甲低下', t: 2.2, col: BANDC.far }; say('冷却装置を全基破壊。巨大砲台に攻撃が通ります。'); }
+  if (T.core && game.mission) { game.mission.done = true; game.bossWave = true; for (const x of [...game.enemies]) kill(x); game.announce = { text: '作戦目標達成', t: 2.6 }; }
 }
 const EVADE_NAME = { roll: 'ローリング', fwd: '前方ダッシュ', back: '後方ダッシュ' };
 // Evasive boost: breaks every lock currently on the pilot (70% each with the right leg broken).
@@ -864,8 +928,8 @@ function evade() {
   game.evade = { kind: ev.kind, t: 0, dur: 0.7, dir: Math.random() < 0.5 ? -1 : 1 };
   let broke = 0;
   for (const e of game.enemies) {
-    if (e.lockT > 0 && (!brokenPart(1) || Math.random() < 0.7)) { e.lockT = 0; e.fireCd = e.T.fireCd * rnd(.6, 1); broke++; }
-    if (ev.kind !== 'roll') e.knock = { from: e.dist, to: ev.kind === 'fwd' ? Math.max(60, e.dist * 0.82) : Math.min(1150, e.dist * 1.22), t: 0, dur: 0.6 };
+    if (e.lockT > 0 && (!brokenPart(1) || Math.random() < 0.7)) { e.lockT = 0; e.mega = false; e.fireCd = e.T.fireCd * rnd(.6, 1); broke++; }
+    if (ev.kind !== 'roll' && !e.T.fixed) e.knock = { from: e.dist, to: ev.kind === 'fwd' ? Math.max(60, e.dist * 0.82) : Math.min(1150, e.dist * 1.22), t: 0, dur: 0.6 };
   }
   SFX.dash();
   if (broke) { SFX.dodge(); game.announce = { text: 'ロックオン解除', t: 1.2, col: PHOS }; say(`回避成功（${EVADE_NAME[ev.kind]}）。${broke}機のロックオンを外しました。`); }
@@ -972,7 +1036,7 @@ function spinProject(M, yc, rad, mcx, mcy, sc, yaw, tilt = 0.25) {
 }
 function drawEnemies() {
   for (const e of game.enemies) {
-    const fr = enemyFrame(e), T = e.T, spr = enemyArt[e.key];
+    const fr = enemyFrame(e), T = e.T, spr = enemyArt[T.art || e.key];
     if (spr) drawEnemySprite(e, fr, spr);
     else drawEnemyModel(e, fr, T);
     if (e.flash > 0) {
@@ -987,7 +1051,7 @@ function drawEnemies() {
 function drawEnemySprite(e, fr, spr) {
   const c = projP(fr.P); if (!c) return;
   const size = 2.3 * markSize(e, c[2]), k = size / Math.max(spr.width, spr.height), w = spr.width * k, h = spr.height * k;
-  const flip = e.key !== 'fort' && Math.cos(nowS * 1.3 + e.phase) * e.strafe < 0;
+  const flip = e.key !== 'fort' && !e.T.fixed && Math.cos(nowS * 1.3 + e.phase) * e.strafe < 0;
   ctx.save(); ctx.translate(c[0], c[1]); if (flip) ctx.scale(-1, 1);
   ctx.drawImage(spr, -w / 2, -h / 2, w, h);
   if (e.hurt > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, e.hurt * 5); ctx.drawImage(spr, -w / 2, -h / 2, w, h); ctx.drawImage(spr, -w / 2, -h / 2, w, h); }
@@ -1176,12 +1240,12 @@ function drawLockWarning() {
   if (on) {
     ctx.font = `600 16px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = BANDC.near;
     ctx.shadowColor = BANDC.near; ctx.shadowBlur = 10;
-    ctx.fillText('LOCK-ON WARNING', cx, top + 34); ctx.shadowBlur = 0;
-    ctx.font = `600 12px ${FONT}`; ctx.fillText(`ロックオン警告：${dirs.join('・')}　回避ボタンで回避`, cx, top + 54);
+    ctx.fillText('LOCK-ON WARNING', cx, top + 66); // below the boss bar ctx.shadowBlur = 0;
+    ctx.font = `600 12px ${FONT}`; ctx.fillText(`ロックオン警告：${dirs.join('・')}　回避ボタンで回避`, cx, top + 86);
   }
   for (const e of lockers) { // red closing brackets on locking enemies in view
     const c = projP(enemyFrame(e).P); if (!c || !inView(e)) continue;
-    const r = 18 + 30 * (e.lockT / (e.T.boss ? 1.4 : 1.1));
+    const r = 18 + 30 * Math.min(1, e.lockT / (e.lockMax || 1.1));
     ctx.strokeStyle = BANDC.near; ctx.lineWidth = 2;
     for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4 + nowS * 3; ctx.beginPath(); ctx.arc(c[0], c[1], r, a - 0.35, a + 0.35); ctx.stroke(); }
   }
@@ -1193,11 +1257,17 @@ function drawOverlayText() {
   if (game.state !== 'idle') {
     const st = stage();
     ctx.textAlign = 'left';
-    ctx.fillText(`${st.name} ${game.bossWave ? '大型機' : `第${game.waveInStage}波`}　残${game.enemies.length}`, 14, safeTop + 72);
+    if (game.mission && !game.mission.done) {
+      const M = game.mission, m = Math.max(0, Math.ceil(M.time)), cool = game.enemies.filter(e => e.T.cooler).length;
+      ctx.fillText(`${st.name}　残り ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`, 14, safeTop + 72);
+      ctx.fillStyle = M.charge > 70 ? BANDC.near : BANDC.mid;
+      ctx.fillText(`主砲充填 ${Math.floor(M.charge)}%${cool ? `　冷却装置 残${cool}` : '　装甲低下'}`, 14, safeTop + 88);
+      ctx.fillStyle = PHOS;
+    } else ctx.fillText(`${st.name} ${game.bossWave ? '大型機' : `第${game.waveInStage}波`}　残${game.enemies.length}`, 14, safeTop + 72);
     ctx.textAlign = 'right'; ctx.fillText(String(game.score).padStart(6, '0'), W - 14, safeTop + 72);
     const boss = game.enemies.find(e => e.T.boss);
     if (boss) {
-      const bw = W * 0.56, bx = cx - bw / 2, by = safeTop + 92;
+      const bw = W * 0.56, bx = cx - bw / 2, by = safeTop + (game.mission ? 110 : 92); // below the mission lines
       ctx.strokeStyle = BANDC.near; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 6);
       ctx.fillStyle = BANDC.near; ctx.fillRect(bx, by, bw * Math.max(0, boss.hp / boss.hpMax), 6);
       ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(boss.T.name, cx, by + 10);
@@ -1344,7 +1414,7 @@ function drawMonitor() {
   const areaH = h - textH;
   const mcx = mw / 2, mcy = textH + areaH / 2;
   const sc = Math.min(areaH * 0.42 / T.rad, mw * 0.42 / T.rad);
-  const spr = enemyArt[e.key];
+  const spr = enemyArt[T.art || e.key];
   c.globalAlpha = 1;
   if (spr) { // sprite with a slow hover
     const k = Math.min(areaH * 0.88 / spr.height, mw * 0.9 / spr.width), sw = spr.width * k, sh = spr.height * k;
