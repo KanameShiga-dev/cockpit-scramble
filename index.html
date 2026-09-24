@@ -438,6 +438,16 @@ for (const [k, A] of Object.entries(UNIT_ART)) {
   im.onload = () => { unitArt[k] = { front: cutView(im, A.front), side: cutView(im, A.side), back: cutView(im, A.back) }; };
   im.src = A.src;
 }
+// Enemy sprites (img/enemies.png): line art keyed to transparency, one hue x 8 levels, packed side by side
+// as [x, y, w, h]. Enemies are drawn as billboards; the 3D models remain for debris and as the fallback.
+const ENEMY_SPRITES = { garm: [0, 0, 300, 162], vespa: [302, 0, 300, 196], hawk: [604, 0, 300, 193], titan: [906, 0, 300, 186], fort: [1208, 0, 300, 185] };
+const enemyArt = {};
+{
+  const im = new Image();
+  im.onload = () => { for (const [k, [x, y, w, h]] of Object.entries(ENEMY_SPRITES)) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, x, y, w, h, 0, 0, w, h); enemyArt[k] = c; } };
+  im.src = 'img/enemies.png';
+}
 
 // ================= data =================
 const VULCAN = { name: 'バルカン', dmg: 4, cd: 0.14, fx: 'bullet', en: 0 };
@@ -915,16 +925,9 @@ function spinProject(M, yc, rad, mcx, mcy, sc, yaw, tilt = 0.25) {
 }
 function drawEnemies() {
   for (const e of game.enemies) {
-    const fr = enemyFrame(e), T = e.T;
-    const pts = T.model.v.map(v => projP(toWorld(fr, v, T)));
-    const vis = f => { // camera at origin: face visible when its world normal points toward it
-      const n = f.n, w = toWorld(fr, f.c, T);
-      return (n[0]*fr.R[0] + n[1]*fr.up[0] + n[2]*fr.fw[0]) * w[0] + (n[0]*fr.R[1] + n[1]*fr.up[1] + n[2]*fr.fw[1]) * w[1]
-        + (n[0]*fr.R[2] + n[1]*fr.up[2] + n[2]*fr.fw[2]) * w[2] < 0;
-    };
-    ctx.strokeStyle = e.hurt > 0 ? '#ffffff' : e.mode === 'evade' ? '#e8ffb0' : '#c9ffd9';
-    ctx.lineWidth = T.boss ? 1.4 : 1.1; ctx.lineJoin = 'round';
-    drawModel(ctx, T.model, pts, vis, T.rad * T.scale * 0.04);
+    const fr = enemyFrame(e), T = e.T, spr = enemyArt[e.key];
+    if (spr) drawEnemySprite(e, fr, spr);
+    else drawEnemyModel(e, fr, T);
     if (e.flash > 0) {
       const c = projP(fr.P);
       if (c) { ctx.save(); ctx.strokeStyle = BANDC.near; ctx.lineWidth = 2; ctx.globalAlpha = Math.min(1, e.flash / 0.3);
@@ -932,6 +935,27 @@ function drawEnemies() {
         ctx.restore(); }
     }
   }
+}
+// billboard sized to the lock-on frame, mirrored with the strafe direction, flashed white when hit
+function drawEnemySprite(e, fr, spr) {
+  const c = projP(fr.P); if (!c) return;
+  const size = 2.3 * markSize(e, c[2]), k = size / Math.max(spr.width, spr.height), w = spr.width * k, h = spr.height * k;
+  const flip = e.key !== 'fort' && Math.cos(nowS * 1.3 + e.phase) * e.strafe < 0;
+  ctx.save(); ctx.translate(c[0], c[1]); if (flip) ctx.scale(-1, 1);
+  ctx.drawImage(spr, -w / 2, -h / 2, w, h);
+  if (e.hurt > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, e.hurt * 5); ctx.drawImage(spr, -w / 2, -h / 2, w, h); ctx.drawImage(spr, -w / 2, -h / 2, w, h); }
+  ctx.restore();
+}
+function drawEnemyModel(e, fr, T) {
+  const pts = T.model.v.map(v => projP(toWorld(fr, v, T)));
+  const vis = f => { // camera at origin: face visible when its world normal points toward it
+    const n = f.n, w = toWorld(fr, f.c, T);
+    return (n[0]*fr.R[0] + n[1]*fr.up[0] + n[2]*fr.fw[0]) * w[0] + (n[0]*fr.R[1] + n[1]*fr.up[1] + n[2]*fr.fw[1]) * w[1]
+      + (n[0]*fr.R[2] + n[1]*fr.up[2] + n[2]*fr.fw[2]) * w[2] < 0;
+  };
+  ctx.strokeStyle = e.hurt > 0 ? '#ffffff' : e.mode === 'evade' ? '#e8ffb0' : '#c9ffd9';
+  ctx.lineWidth = T.boss ? 1.4 : 1.1; ctx.lineJoin = 'round';
+  drawModel(ctx, T.model, pts, vis, T.rad * T.scale * 0.04);
 }
 function muzzle(side) { return [side < 0 ? W * 0.18 : W * 0.82, bottom + 6]; }
 function drawFx() {
@@ -1253,9 +1277,16 @@ function drawMonitor() {
   const areaH = h - textH;
   const mcx = mw / 2, mcy = textH + areaH / 2;
   const sc = Math.min(areaH * 0.42 / T.rad, mw * 0.42 / T.rad);
-  const { pts, vis } = spinProject(M, T.yc, T.rad, mcx, mcy, sc, nowS * 0.8);
-  c.globalAlpha = 1; c.strokeStyle = '#c9ffd9'; c.lineWidth = 0.9 * s; c.lineJoin = 'round';
-  drawModel(c, M, pts, vis, T.rad * 0.04);
+  const spr = enemyArt[e.key];
+  c.globalAlpha = 1;
+  if (spr) { // sprite with a slow hover
+    const k = Math.min(areaH * 0.88 / spr.height, mw * 0.9 / spr.width), sw = spr.width * k, sh = spr.height * k;
+    c.drawImage(spr, mcx - sw / 2, mcy - sh / 2 + Math.sin(nowS * 1.6) * 2 * s, sw, sh);
+  } else {
+    const { pts, vis } = spinProject(M, T.yc, T.rad, mcx, mcy, sc, nowS * 0.8);
+    c.strokeStyle = '#c9ffd9'; c.lineWidth = 0.9 * s; c.lineJoin = 'round';
+    drawModel(c, M, pts, vis, T.rad * 0.04);
+  }
   if (brokenPart(3)) { // head sensor lost: noisy monitor
     c.fillStyle = 'rgba(0,0,0,.35)';
     for (let i = 0; i < 18; i++) c.fillRect(0, Math.random() * h, w, Math.random() * 4 * s);
