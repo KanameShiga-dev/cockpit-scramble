@@ -419,80 +419,30 @@ function modelFortress() { // FX-9: ring fortress with core hangars and four tur
   return m;
 }
 
-// Player machines (shown in the pre-launch check). No head horns: twin eyes and a brow plate only.
-//  zx = TYPE-A balance: flight binders over the shoulders, long rifle, small shield
-//  sn = TYPE-B speed: fan of blade wings on the back, pointed shoulders, lance
-//  hv = TYPE-C power: layered heavy armor, twin shoulder cannons, missile pods, hand cannon
-function modelPilot(k) {
-  const m = mdl();
-  const o = { zx: { lx: 1.6, l: 1, tw: 1, sx: 4.4, sh: 1 }, sn: { lx: 1.4, l: 0.82, tw: 0.86, sx: 3.9, sh: 0.85 },
-    hv: { lx: 2.1, l: 1.3, tw: 1.25, sx: 5.3, sh: 1.35 } }[k];
-  both(s => {
-    const x = s * o.lx, L = o.l;
-    pod(m, 'z', [x, 0.7, -1.4], [x, 0.6, 2.5], 1.9 * L, 1.4, 1.4 * L, 0.9);          // foot
-    pod(m, 'y', [x, 0.9, 0.1], [x, 7.4, 0.1], 2.3 * L, 2.6, 1.6 * L, 1.9);           // shin with flared calf
-    Zb(m, x, 7.5, 0.4, 1.9, 1.4 * L, 1.6, 1.0 * L, 1.0, 0.3);                        // knee armor
-    pod(m, 'y', [x, 7.2, 0], [x, 10.8, 0], 1.6 * L, 1.8, 1.9 * L, 2.0);              // thigh
-    Vb(m, s * (o.lx + 1.1) * o.tw, 0, 9.4, 11.3, 0.5, 2.4, 0.5, 2.9, 0.3);           // side skirt
-    Vb(m, s * 1.05, 1.5, 9.2, 11.0, 1.8, 0.4, 2.0, 0.5, 0.3);                        // front skirt
-    pod(m, 'y', [s * o.sx, 13.5, 0], [s * o.sx, 11.2, 0], 1.2 * L, 1.2);              // upper arm
-    pod(m, 'y', [s * (o.sx + 0.1), 11.3, 0.2], [s * (o.sx + 0.1), 8.2, 0.3], 1.6 * L, 1.7, 1.8 * L, 1.9); // forearm
-    pod(m, 'y', [s * (o.sx + 0.1), 8.3, 0.35], [s * (o.sx + 0.1), 7.1, 0.4], 1.1 * L, 1.2); // hand
-    Zb(m, s * 1.25 * o.tw, 14.3, 1.45, 1.85, 1.0, 0.9, 0.9, 0.8, 0.2);               // chest vent
-    for (const y of [14.05, 14.3, 14.55]) seg(m, [s * 0.85 * o.tw, y, 1.87], [s * 1.65 * o.tw, y, 1.87]);
-    seg(m, [s * 0.2, 17.3, 1.08], [s * 0.65, 17.4, 0.95]);                            // twin eye
-    pod(m, 'y', [s * 0.9, 12.6, -3.2], [s * 0.9, 11.4, -3.2], 0.8, 0.8, 1.1, 1.1, 8, [[0, 0.6], [1, 1]]); // thrusters
-  });
-  pod(m, 'y', [0, 10.8, 0.2], [0, 8.8, 0.3], 2.6, 2.4, 1.4, 1.8);                   // crotch
-  Ve(m, 0, 0, [[10.2, 3.0 * o.tw, 2.2], [11.4, 3.2 * o.tw, 2.3]]);                    // waist
-  Ve(m, 0, 0, [[11.3, 3.2 * o.tw, 2.4], [12.6, 4.2 * o.tw, 2.9], [14.0, 5.6 * o.tw, 3.4], [15.2, 5.4 * o.tw, 3.2], [16.0, 3.6 * o.tw, 2.4]], 12); // torso
-  Zb(m, 0, 13.0, 1.2, 1.7, 1.2, 1.0, 1.0, 0.8, 0.3);                                 // cockpit hatch
-  pod(m, 'y', [0, 15.8, 0], [0, 16.5, 0], 1.1, 1.1);                                 // neck
-  Ve(m, 0, 0.1, [[16.3, 1.5, 1.6], [16.8, 1.9, 2.0], [17.8, 1.9, 2.0], [18.2, 1.3, 1.4]], 12); // head
-  Zb(m, 0, 16.85, 0.9, 1.2, 0.9, 0.7, 0.6, 0.45, 0.3);                               // face mask
-  Zb(m, 0, 17.85, 0.7, 1.15, 1.2, 0.35, 0.9, 0.25, 0.3);                             // brow plate (no horns)
-  Vb(m, 0, -2.2, 12.4, 15.8, 3.6 * o.tw, 1.8, 3.2 * o.tw, 1.6, 0.3);               // backpack
-  const plate = (P, z0, z1) => hull(m, [P.map(([u, v]) => [u, v, z0]), P.map(([u, v]) => [u, v, z1])]);
-  if (k === 'zx') { // TYPE-A
-    both(s => {
-      hull(m, [rr('x', [s * 3.3, 14.8, 0], 2.8, 2.6, 0.35), rr('x', [s * 5.5, 15.1, 0], 3.2, 3.0, 0.35)]); // rounded shoulder
-      const B = [[2.2, 18.8], [5.2, 21.0], [6.6, 17.2], [6.0, 9.0], [3.6, 10.6]].map(([u, v]) => [s * u, v]);
-      plate(B, -2.5, -2.9);                                                          // flight binder
-      seg(m, [B[0][0], B[0][1], -2.45], [B[3][0], B[3][1], -2.45]); seg(m, [B[1][0], B[1][1] - 0.4, -2.45], [B[4][0], B[4][1] + 0.4, -2.45]);
-    });
-    pod(m, 'z', [4.6, 7.6, -1.6], [4.6, 7.6, 3.0], 0.8, 1.3, 0.8, 1.1);            // rifle body
-    pod(m, 'z', [4.6, 7.8, 3.0], [4.6, 7.8, 8.4], 0.4, 0.4, 0.35, 0.35, 6, TUBE);   // long barrel
-    pod(m, 'z', [4.6, 8.6, 0.2], [4.6, 8.6, 1.8], 0.45, 0.45);                      // scope
-    plate([[-5.6, 11.2], [-3.9, 11.2], [-3.9, 8.0], [-4.75, 6.8], [-5.6, 8.0]], 1.5, 1.75); // small shield
-  } else if (k === 'sn') { // TYPE-B
-    both(s => {
-      hull(m, [rr('x', [s * 3.0, 14.8, 0], 2.2, 2.0, 0.3), rr('x', [s * 4.4, 15.6, -0.2], 1.6, 1.0, 0.3), rr('x', [s * 5.8, 17.0, -0.5], 0.1, 0.1, 0.3)]); // pointed shoulder
-      for (const [tx, ty, oy] of [[6.8, 21.0, 15.6], [8.8, 18.2, 15.0], [9.4, 14.6, 14.4], [8.4, 10.8, 13.8], [6.2, 7.6, 13.2]]) // blade wing fan
-        hull(m, [rr('z', [s * 1.5, oy, -2.6], 0.5, 0.9, 0.3), rr('z', [s * tx, ty, -3.8], 0.06, 0.12, 0.3)]);
-      Zb(m, s * o.lx, 7.6, 1.2, 2.8, 0.7, 0.9, 0.05, 0.05);                         // knee spike
-    });
-    pod(m, 'z', [4.0, 7.6, -5.0], [4.0, 7.6, 3.0], 0.35, 0.35, 0.35, 0.35, 6, TUBE); // lance shaft
-    hull(m, [circ('z', [4.0, 7.6, 3.0], 0.7, 6), circ('z', [4.0, 7.6, 7.6], 0.04, 6)]); // lance head
-  } else { // TYPE-C
-    both(s => {
-      Vb(m, s * 3.9, 0, 13.6, 16.6, 2.8, 3.4, 3.0, 3.6, 0.25);                     // shoulder core
-      Vb(m, s * 4.9, 0, 12.8, 16.2, 1.4, 3.8, 1.2, 3.2, 0.25);                     // layered outer plate
-      pod(m, 'z', [s * 2.2, 18.2, -3.4], [s * 2.2, 18.2, 0.8], 1.8, 1.8, 1.6, 1.6, 10); // cannon breech
-      pod(m, 'z', [s * 2.2, 18.2, 0.8], [s * 2.2, 18.2, 7.2], 0.9, 0.9, 0.8, 0.8, 8, TUBE); // cannon barrel
-      pod(m, 'z', [s * 2.2, 18.2, 7.2], [s * 2.2, 18.2, 8.0], 1.2, 1.2, 1.2, 1.2, 8, TUBE); // muzzle
-      Vb(m, s * 5.4, -0.2, 16.4, 18.0, 1.6, 2.2, 1.6, 2.2, 0.2);                   // missile pod
-      for (const py of [16.9, 17.5]) poly(m, circ('z', [s * 5.4, py, 0.95], 0.22, 6));
-      Vb(m, s * o.lx, 0.9, 3.0, 6.6, 2.4, 0.6, 2.8, 0.7, 0.3);                    // shin armor
-    });
-    pod(m, 'z', [5.4, 7.4, -2.0], [5.4, 7.4, 2.6], 1.4, 1.6, 1.4, 1.5, 10);         // hand cannon body
-    pod(m, 'z', [5.4, 7.5, 2.6], [5.4, 7.5, 6.6], 0.9, 0.9, 0.9, 0.9, 8, TUBE);     // hand cannon barrel
-  }
-  return m;
+// Own-machine blueprints (img/unit-*.webp, three-view line art). Each view is cut out and its dark
+// background keyed to transparent when loaded. Until then, or if loading fails (e.g. opened from file://),
+// the vector damage figure and a text label are used instead.
+const UNIT_ART = {
+  zx: { src: 'img/unit-zx.webp', front: [40, 155, 480, 690], side: [540, 160, 350, 685], back: [960, 155, 460, 690] },
+  sn: { src: 'img/unit-sn.webp', front: [30, 110, 480, 800], side: [520, 110, 360, 800], back: [940, 110, 470, 800] },
+  hv: { src: 'img/unit-hv.webp', front: [40, 135, 500, 780], side: [550, 105, 385, 810], back: [1015, 135, 490, 780] }
+};
+const unitArt = {};
+function keyOut(im, [sx, sy, sw, sh], H = 360) {
+  const c = document.createElement('canvas'), w = Math.round(H * sw / sh);
+  c.width = w; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(im, sx, sy, sw, sh, 0, 0, w, H);
+  const d = g.getImageData(0, 0, w, H), p = d.data;
+  for (let i = 0; i < p.length; i += 4) p[i + 3] = clamp((Math.max(p[i], p[i + 1], p[i + 2]) - 80) * 2.2, 0, 255);
+  g.putImageData(d, 0, 0);
+  return c;
 }
-const PILOT_MODELS = Object.fromEntries(['zx', 'hv', 'sn'].map(k => {
-  const M = modelPilot(k);
-  return [k, { M, yc: 10, rad: Math.max(...M.v.map(v => Math.hypot(v[0], v[1] - 10, v[2]))) }];
-}));
+for (const [k, A] of Object.entries(UNIT_ART)) {
+  const im = new Image();
+  im.onload = () => { try { unitArt[k] = { front: keyOut(im, A.front), side: keyOut(im, A.side), back: keyOut(im, A.back) }; } catch (e) {} };
+  im.src = A.src;
+}
 
 // ================= data =================
 const VULCAN = { name: 'バルカン', dmg: 4, cd: 0.14, fx: 'bullet', en: 0 };
@@ -1258,7 +1208,21 @@ const FIGURES = {
         const B = [[9,9.4], tip, [9,10.6]]; return [[-1, B], [-1, mir(B)]]; }),
       arms: [[4, [[16.2,10.4],[16.9,10.4],[16.9,29],[16.2,29]]], [4, [[16.55,6.2],[17.2,10.4],[15.9,10.4]]]] } }) // lance
 };
+// Blueprint front view as the damage figure. Front view: the machine's left side is on the screen's right.
+// Zones are [x, y, w, h] as fractions of the view, keyed by PARTS index.
+const DMG_ZONES = { 3: [0.36, 0, 0.28, 0.17], 4: [0, 0.12, 0.36, 0.62], 2: [0.64, 0.12, 0.36, 0.62], 1: [0.1, 0.55, 0.4, 0.45], 0: [0.5, 0.55, 0.4, 0.45] };
+const figCv = document.createElement('canvas');
 function drawDamage(c, x0, y0, s) {
+  const art = unitArt[game.key];
+  if (art) {
+    const img = art.front, h = Math.round(46 * s), w = Math.round(h * img.width / img.height), g = figCv.getContext('2d');
+    if (figCv.width !== w || figCv.height !== h) { figCv.width = w; figCv.height = h; }
+    g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+    g.globalCompositeOperation = 'source-atop'; g.fillStyle = BANDC.near; // recolor broken parts' lines red
+    for (const [pi, [zx, zy, zw, zh]] of Object.entries(DMG_ZONES)) if (brokenPart(+pi)) g.fillRect(zx * w, zy * h, zw * w, zh * h);
+    c.save(); c.globalCompositeOperation = 'lighter'; c.drawImage(figCv, x0, y0); c.drawImage(figCv, x0, y0); c.restore(); // twice: thin lines stay legible when small
+    return;
+  }
   const k = 1.15 * s;
   c.lineWidth = s; c.lineJoin = 'round';
   for (const [pi, P, open] of FIGURES[game.key] || FIGURES.zx) {
@@ -1486,20 +1450,19 @@ function drawLaunchPanel() {
 }
 // left: own machine as a spinning wireframe, a scan line turns it solid; right: armament and condition lists
 function drawCheckView(t, x, y, w, h, code) {
-  const PM = PILOT_MODELS[game.key], mw = w * 0.4, mx = x + 8, my = y + 26, mh = h - 34;
-  const sc = Math.min(mh * 0.46, mw * 0.46) / PM.rad, scanY = my + mh * Math.min(1, Math.max(0, (t - 0.3) / 1.5));
+  const mw = w * 0.4, mx = x + 8, my = y + 26, mh = h - 34, art = unitArt[game.key];
   ctx.strokeStyle = 'rgba(61,255,122,.25)'; ctx.lineWidth = 1; ctx.strokeRect(mx, my, mw, mh);
-  const { pts, vis } = spinProject(PM.M, PM.yc, PM.rad, mx + mw / 2, my + mh / 2 + 4, sc, t * 0.9 + 0.6);
-  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
-  ctx.strokeStyle = 'rgba(61,255,122,.35)'; ctx.lineWidth = 0.6; ctx.beginPath();
-  for (const [a, b] of PM.M.e) { ctx.moveTo(pts[a][0], pts[a][1]); ctx.lineTo(pts[b][0], pts[b][1]); }
-  ctx.stroke();
-  ctx.beginPath(); ctx.rect(mx, my, mw, scanY - my); ctx.clip();
-  ctx.strokeStyle = '#c9ffd9'; ctx.lineWidth = 0.9; ctx.lineJoin = 'round';
-  drawModel(ctx, PM.M, pts, vis, PM.rad * 0.04);
-  ctx.restore();
-  if (t < 1.8) { ctx.fillStyle = PHOS; ctx.fillRect(mx, scanY - 1, mw, 2); }
-  ctx.fillStyle = PHOS; ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(code, mx + mw / 2, my + mh - 14);
+  // blueprint views in turn (front → side → back), each revealed by a scan line
+  const VIEWS = ['FRONT', 'SIDE', 'BACK'], u = Math.max(0, t - 0.3), vi = Math.min(2, Math.floor(u / 1.35)), vt = u - vi * 1.35;
+  if (art) {
+    const img = art[VIEWS[vi].toLowerCase()], ah = mh - 20, sc = Math.min(ah / img.height, (mw - 8) / img.width);
+    const iw = img.width * sc, ih = img.height * sc, ix = mx + (mw - iw) / 2, iy = my + 4, scanY = iy + ih * Math.min(1, vt / 0.9);
+    ctx.save(); ctx.globalAlpha *= 0.22; ctx.drawImage(img, ix, iy, iw, ih); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(ix, iy, iw, scanY - iy); ctx.clip(); ctx.drawImage(img, ix, iy, iw, ih); ctx.restore();
+    if (vt < 0.9) { ctx.fillStyle = PHOS; ctx.fillRect(mx + 2, scanY - 1, mw - 4, 2); }
+  }
+  ctx.fillStyle = PHOS; ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'center';
+  ctx.fillText(`${code}  ${VIEWS[vi]} VIEW`, mx + mw / 2, my + mh - 14);
   // lists
   const lx = mx + mw + 12, rx = x + w - 12; let ly = y + 28;
   const row = (label, status, col, font = `400 10px ${FONT}`) => {
@@ -1524,7 +1487,11 @@ function drawCheckView(t, x, y, w, h, code) {
 }
 // model number, English name, pilot, then the countdown seen through the monitor
 function drawIdView(t, x, y, w, h, code) {
-  const u = t - LAUNCH.id, shown = code.slice(0, Math.floor(Math.max(0, u) / 0.08));
+  const u = t - LAUNCH.id, shown = code.slice(0, Math.floor(Math.max(0, u) / 0.08)), art = unitArt[game.key];
+  if (art) { // front view faintly behind the text
+    const img = art.front, ih = h - 16, iw = img.width * ih / img.height;
+    ctx.save(); ctx.globalAlpha *= Math.min(0.28, u * 0.5); ctx.drawImage(img, x + w - iw - 6, y + 8, iw, ih); ctx.restore();
+  }
   ctx.textAlign = 'center'; ctx.fillStyle = '#c9ffd9'; ctx.font = `600 42px ${FONT}`;
   ctx.shadowColor = PHOS; ctx.shadowBlur = 14; ctx.fillText(shown, x + w / 2, y + 24); ctx.shadowBlur = 0;
   if (u > 0.5) { ctx.font = `600 15px ${FONT}`; ctx.fillStyle = PHOS; ctx.fillText(game.m.call, x + w / 2, y + 70); }
