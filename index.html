@@ -477,6 +477,11 @@ const enemyArt = {};
     const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, x, y, w, h, 0, 0, w, h); enemyArt[k] = c; } };
   im.src = 'img/enemies.png';
 }
+{ // battleship: its own sheet (img/dread.png)
+  const im = new Image();
+  im.onload = () => { enemyArt.dread = im; };
+  im.src = 'img/dread.png';
+}
 
 // ================= data =================
 const VULCAN = { name: 'バルカン', dmg: 4, cd: 0.14, fx: 'bullet', en: 0 };
@@ -501,7 +506,7 @@ const ENEMY = {
   titan: { name: 'TX-0 タイタン', role: '大型陸戦機', size: '全高 63 m', weapon: '大口径ビーム砲×3', hp: 700, speed: 0.35, dmg: 11, fireCd: 3.4, volley: 3, range: 1200, prefers: 'mid', score: 3000, model: modelTitan(), yc: 7, scale: 4.5, boss: true },
   colossus: { name: 'GX-1 ゴライアス砲', role: '巨大砲台', size: '全高 80 m', weapon: '大口径荷電粒子砲', hp: 900, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 4000, model: modelTitan(), yc: 7, scale: 6, boss: true, fixed: true, core: true, shielded: true, art: 'titan', megaDmg: 30 },
   cooler: { name: '冷却装置', role: '砲台の弱点', size: '全高 12 m', weapon: 'なし', hp: 160, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 500, model: modelCooler(), yc: 4, scale: 1.5, fixed: true, guard: true },
-  dread: { name: 'BX-5 グラナート級戦艦', role: '宇宙戦艦', size: '全長 320 m', weapon: '主砲・砲塔×4・艦載機', hp: 1100, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 3, boss: true, fixed: true, core: true, shielded: true, art: 'fort', megaDmg: 26 },
+  dread: { name: 'BX-5 グラナート級戦艦', role: '宇宙戦艦', size: '全長 320 m', weapon: '主砲・砲塔×4・艦載機', hp: 1100, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 4.5, boss: true, fixed: true, core: true, shielded: true, megaDmg: 26 },
   turret: { name: '艦載砲塔', role: '戦艦の砲塔', size: '全高 14 m', weapon: '連装砲', hp: 180, speed: 0, dmg: 8, fireCd: 4.5, range: 1500, prefers: 'far', score: 600, model: modelTurret(), yc: 3, scale: 1.5, fixed: true, guard: true },
   fort:  { name: 'FX-9 ハイヴ', role: '宇宙要塞', size: '全幅 100 m', weapon: '砲台×4・艦載機', hp: 1200, speed: 0.15, dmg: 9, fireCd: 3.0, volley: 4, range: 1200, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 1.5, boss: true, spawns: true }
 };
@@ -681,7 +686,7 @@ function startMission(st) {
     say('冷却装置2基を破壊すると、巨大砲台の装甲が弱まります。主砲の発射前に回避を。');
   } else {
     place(spawn('dread'), 0, 6, 820);
-    for (const [daz, del] of [[-6.5, 1.5], [-3, -1.5], [3, -1.5], [6.5, 1.5]]) { const t = place(spawn('turret'), daz, 6 + del, 790); t.fireCd = rnd(1, 6); }
+    for (const [daz, del] of [[-9.5, 2], [-4.5, -2], [4.5, -2], [9.5, 2]]) { const t = place(spawn('turret'), daz, 6 + del, 790); t.fireCd = rnd(1, 6); }
     spawn('vespa'); spawn('garm');
     game.announce = { text: '作戦目標：敵戦艦の撃沈', t: 3.2, col: BANDC.near };
     say('砲塔4基を破壊すると、艦橋に攻撃が通ります。主砲と艦載機に注意。');
