@@ -414,6 +414,13 @@ function modelCooler() { // coolant tank: weak point of the giant cannon
   both(s => Vb(m, s * 3.2, 0, 1, 7, 0.6, 4, 0.6, 3.6, 0.2));
   return m;
 }
+function modelTurret() { // battleship turret: base, dome, twin barrels
+  const m = mdl();
+  pod(m, 'y', [0, 0, 0], [0, 2, 0], 6, 6, 5.5, 5.5, 12, TUBE);
+  Ve(m, 0, 0, [[2, 5, 5], [3.6, 4.4, 4.2], [4.4, 2.8, 2.6]], 12);
+  both(s => pod(m, 'z', [s * 0.8, 3.2, 1.5], [s * 0.8, 3.2, 7], 0.6, 0.6, 0.5, 0.5, 8, TUBE));
+  return m;
+}
 function modelFortress() { // FX-9: ring fortress with core hangars and four turrets
   const m = mdl(), R = 34, n = 16, TAU = 2 * Math.PI;
   const at = (a, r, y) => [r * Math.cos(a), y, r * Math.sin(a)];
@@ -492,15 +499,18 @@ const ENEMY = {
   vespa: { name: 'VX-3 ヴェスパ', role: '高機動型', size: '全高 17.6 m', weapon: 'ビームクロー', hp: 40, speed: 1.8, dmg: 9, fireCd: 2.2, range: 180, prefers: 'near', score: 150, model: modelFast(), yc: 9, scale: 1.5 },
   hawk:  { name: 'HK-9 ホーク', role: '砲撃型', size: '全高 21.0 m', weapon: '長距離砲', hp: 120, speed: 0.6, dmg: 12, fireCd: 4.6, range: 1200, prefers: 'far', score: 250, model: modelHeavy(), yc: 9, scale: 1.5 },
   titan: { name: 'TX-0 タイタン', role: '大型陸戦機', size: '全高 63 m', weapon: '大口径ビーム砲×3', hp: 700, speed: 0.35, dmg: 11, fireCd: 3.4, volley: 3, range: 1200, prefers: 'mid', score: 3000, model: modelTitan(), yc: 7, scale: 4.5, boss: true },
-  colossus: { name: 'GX-1 ゴライアス砲', role: '巨大砲台', size: '全高 80 m', weapon: '大口径荷電粒子砲', hp: 900, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 4000, model: modelTitan(), yc: 7, scale: 6, boss: true, fixed: true, core: true, shielded: true, art: 'titan' },
-  cooler: { name: '冷却装置', role: '砲台の弱点', size: '全高 12 m', weapon: 'なし', hp: 160, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 500, model: modelCooler(), yc: 4, scale: 1.5, fixed: true, cooler: true },
+  colossus: { name: 'GX-1 ゴライアス砲', role: '巨大砲台', size: '全高 80 m', weapon: '大口径荷電粒子砲', hp: 900, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 4000, model: modelTitan(), yc: 7, scale: 6, boss: true, fixed: true, core: true, shielded: true, art: 'titan', megaDmg: 30 },
+  cooler: { name: '冷却装置', role: '砲台の弱点', size: '全高 12 m', weapon: 'なし', hp: 160, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 500, model: modelCooler(), yc: 4, scale: 1.5, fixed: true, guard: true },
+  dread: { name: 'BX-5 グラナート級戦艦', role: '宇宙戦艦', size: '全長 320 m', weapon: '主砲・砲塔×4・艦載機', hp: 1100, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 3, boss: true, fixed: true, core: true, shielded: true, art: 'fort', megaDmg: 26 },
+  turret: { name: '艦載砲塔', role: '戦艦の砲塔', size: '全高 14 m', weapon: '連装砲', hp: 180, speed: 0, dmg: 8, fireCd: 4.5, range: 1500, prefers: 'far', score: 600, model: modelTurret(), yc: 3, scale: 1.5, fixed: true, guard: true },
   fort:  { name: 'FX-9 ハイヴ', role: '宇宙要塞', size: '全幅 100 m', weapon: '砲台×4・艦載機', hp: 1200, speed: 0.15, dmg: 9, fireCd: 3.0, volley: 4, range: 1200, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 1.5, boss: true, spawns: true }
 };
 for (const T of Object.values(ENEMY)) T.rad = Math.max(...T.model.v.map(v => Math.hypot(v[0], v[1] - T.yc, v[2])));
 const STAGES = [
   { kind: 'ground', name: '地上戦域', waves: 3, boss: 'titan', pools: [['garm'], ['garm', 'garm', 'vespa'], ['garm', 'vespa', 'hawk']] },
   { kind: 'space', name: '宇宙戦域', waves: 3, boss: 'fort', pools: [['vespa', 'garm'], ['vespa', 'garm', 'hawk'], ['vespa', 'hawk', 'garm', 'vespa']] },
-  { kind: 'ground', name: '巨大兵器破壊', waves: 0, mission: 'weapon', time: 180, escorts: ['garm', 'hawk'] }
+  { kind: 'ground', name: '巨大兵器破壊', waves: 0, mission: 'weapon', time: 180, guardName: '冷却装置', chargeRate: [5, 3.5], escorts: ['garm', 'hawk'], escortT: 11, escortMax: 3 },
+  { kind: 'space', name: '戦艦撃破', waves: 0, mission: 'ship', guardName: '砲塔', chargeRate: [4, 4], escorts: ['vespa', 'garm'], escortT: 12, escortMax: 4, carrier: true }
 ];
 const PARTS = ['左脚', '右脚', '左腕', '頭部', '右腕'];
 
@@ -656,37 +666,53 @@ function startWave() {
   }
   game.fuel = Math.min(100, game.fuel + 30);
 }
-// Giant weapon mission: a fixed cannon shielded by two coolant tanks; it charges a main shot
-// (locks on for 2 s, heavy damage unless evaded). Fails when the time runs out.
+// Missions: a fixed core shielded by guards (armor blocks all damage until every guard is destroyed).
+// The core charges a main shot (2 s lock-on, heavy damage unless evaded); escorts reinforce.
+//  weapon: giant cannon + 2 coolant tanks, 3 minute limit   ship: battleship + 4 turrets that fire, launches fighters
 function startMission(st) {
-  game.mission = { kind: st.mission, time: st.time * (1 - 0.1 * Math.min(game.loop, 3)), charge: 0, escortT: 6, done: false, armorMsgT: 0 };
-  const az = (view.h + rnd(-50, 50) + 360) % 360, place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0 });
-  place(spawn('colossus'), 0, 7, 720);
-  place(spawn('cooler'), -5, 2.5, 650); place(spawn('cooler'), 5, 2.5, 650);
-  spawn('garm'); spawn('garm');
-  game.announce = { text: '作戦目標：巨大砲台の破壊', t: 3.2, col: BANDC.near };
-  say('冷却装置2基を破壊すると、巨大砲台の装甲が弱まります。主砲の発射前に回避を。');
+  game.mission = { kind: st.mission, time: st.time ? st.time * (1 - 0.1 * Math.min(game.loop, 3)) : null, charge: 0, escortT: 6, done: false, armorMsgT: 0 };
+  const az = (view.h + rnd(-50, 50) + 360) % 360;
+  const place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0, mode: 'assault' });
+  if (st.mission === 'weapon') {
+    place(spawn('colossus'), 0, 7, 720);
+    place(spawn('cooler'), -5, 2.5, 650); place(spawn('cooler'), 5, 2.5, 650);
+    spawn('garm'); spawn('garm');
+    game.announce = { text: '作戦目標：巨大砲台の破壊', t: 3.2, col: BANDC.near };
+    say('冷却装置2基を破壊すると、巨大砲台の装甲が弱まります。主砲の発射前に回避を。');
+  } else {
+    place(spawn('dread'), 0, 6, 820);
+    for (const [daz, del] of [[-6.5, 1.5], [-3, -1.5], [3, -1.5], [6.5, 1.5]]) { const t = place(spawn('turret'), daz, 6 + del, 790); t.fireCd = rnd(1, 6); }
+    spawn('vespa'); spawn('garm');
+    game.announce = { text: '作戦目標：敵戦艦の撃沈', t: 3.2, col: BANDC.near };
+    say('砲塔4基を破壊すると、艦橋に攻撃が通ります。主砲と艦載機に注意。');
+  }
   SFX.alarm();
 }
 function updateMission(dt) {
-  const M = game.mission;
+  const M = game.mission, st = stage();
   if (!M || M.done) return;
-  M.time -= dt; M.armorMsgT -= dt;
-  if (M.time <= 0) { missionFailed('制限時間切れ。巨大砲台の発射を許しました。'); return; }
-  const col = game.enemies.find(e => e.T.core), coolers = game.enemies.filter(e => e.T.cooler).length;
-  if (col && !(col.lockT > 0)) { // lockT is unset until the first lock
-    M.charge += dt * (coolers ? 5 : 3.5) * (1 + 0.15 * game.loop);
-    if (M.charge >= 100) { M.charge = 0; col.lockT = col.lockMax = 2.0; col.mega = true; SFX.lockon(); game.announce = { text: '巨大砲台　主砲発射態勢', t: 2.0, col: BANDC.near }; }
+  M.armorMsgT -= dt;
+  if (M.time != null) { M.time -= dt; if (M.time <= 0) { missionFailed('制限時間切れ。目標の破壊に失敗しました。'); return; } }
+  const core = game.enemies.find(e => e.T.core), guards = game.enemies.filter(e => e.T.guard).length;
+  if (core && !(core.lockT > 0)) { // lockT is unset until the first lock
+    M.charge += dt * (guards ? st.chargeRate[0] : st.chargeRate[1]) * (1 + 0.15 * game.loop);
+    if (M.charge >= 100) { M.charge = 0; core.lockT = core.lockMax = 2.0; core.mega = true; SFX.lockon(); game.announce = { text: `${core.T.name}　主砲発射態勢`, t: 2.0, col: BANDC.near }; }
   }
   M.escortT -= dt;
-  if (M.escortT <= 0) { M.escortT = 11; if (game.enemies.filter(e => !e.T.fixed).length < 3) spawn(stage().escorts[Math.floor(Math.random() * 2)]); }
+  if (M.escortT <= 0) {
+    M.escortT = st.escortT;
+    if (game.enemies.filter(e => !e.T.fixed).length < st.escortMax) {
+      spawn(st.escorts[Math.floor(Math.random() * st.escorts.length)], st.carrier ? core : undefined);
+      if (st.carrier) say('戦艦から艦載機が発進。');
+    }
+  }
 }
 function megaShot(e) {
   e.flash = 0.8; game.shake = 1;
   game.fx.push({ type: 'incoming', e, t: 0, dur: 0.6 });
   SFX.cannon();
-  damagePlayer(30 * (1 + 0.2 * game.loop));
-  say('巨大砲台の主砲が直撃。');
+  damagePlayer(e.T.megaDmg * (1 + 0.2 * game.loop));
+  say(`${e.T.name}の主砲が直撃。`);
 }
 function missionFailed(why) {
   game.state = 'over'; game.locks = []; game.selected = null; game.evade = null;
@@ -883,9 +909,9 @@ function fireAt(w, targets, band) {
       game.fx.push({ type: 'text', P, text: '回避', t: 0, dur: 0.7, col: BANDC.mid });
       SFX.dodge(); return;
     }
-    if (e.T.shielded && game.enemies.some(x => x.T.cooler)) {
+    if (e.T.shielded && game.enemies.some(x => x.T.guard)) {
       game.fx.push({ type: 'text', P, text: '装甲', t: 0, dur: 0.5, col: BANDC.mid });
-      if (game.mission && game.mission.armorMsgT <= 0) { game.mission.armorMsgT = 4; say('装甲に阻まれました。先に冷却装置を破壊してください。'); }
+      if (game.mission && game.mission.armorMsgT <= 0) { game.mission.armorMsgT = 4; say(`装甲に阻まれました。先に${stage().guardName}を破壊してください。`); }
       return;
     }
     e.hp -= w.dmg * (band === 'near' && brokenPart(2) ? 0.6 : 1);
@@ -914,7 +940,7 @@ function kill(e) {
   SFX.boom(!!T.boss);
   if (T.boss) { game.shake = 1; game.announce = { text: `${T.name} 撃破`, t: 2.4 }; }
   say(`${T.name} 撃墜。`);
-  if (T.cooler && !game.enemies.some(x => x.T.cooler)) { game.announce = { text: '冷却装置 全基破壊　装甲低下', t: 2.2, col: BANDC.far }; say('冷却装置を全基破壊。巨大砲台に攻撃が通ります。'); }
+  if (T.guard && !game.enemies.some(x => x.T.guard)) { const g = stage().guardName; game.announce = { text: `${g} 全基破壊　装甲低下`, t: 2.2, col: BANDC.far }; say(`${g}を全基破壊。目標に攻撃が通ります。`); }
   if (T.core && game.mission) { game.mission.done = true; game.bossWave = true; for (const x of [...game.enemies]) kill(x); game.announce = { text: '作戦目標達成', t: 2.6 }; }
 }
 const EVADE_NAME = { roll: 'ローリング', fwd: '前方ダッシュ', back: '後方ダッシュ' };
@@ -1258,10 +1284,10 @@ function drawOverlayText() {
     const st = stage();
     ctx.textAlign = 'left';
     if (game.mission && !game.mission.done) {
-      const M = game.mission, m = Math.max(0, Math.ceil(M.time)), cool = game.enemies.filter(e => e.T.cooler).length;
-      ctx.fillText(`${st.name}　残り ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`, 14, safeTop + 72);
+      const M = game.mission, m = M.time != null ? Math.max(0, Math.ceil(M.time)) : null, guards = game.enemies.filter(e => e.T.guard).length;
+      ctx.fillText(`${st.name}${m != null ? `　残り ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}` : ''}`, 14, safeTop + 72);
       ctx.fillStyle = M.charge > 70 ? BANDC.near : BANDC.mid;
-      ctx.fillText(`主砲充填 ${Math.floor(M.charge)}%${cool ? `　冷却装置 残${cool}` : '　装甲低下'}`, 14, safeTop + 88);
+      ctx.fillText(`主砲充填 ${Math.floor(M.charge)}%${guards ? `　${st.guardName} 残${guards}` : '　装甲低下'}`, 14, safeTop + 88);
       ctx.fillStyle = PHOS;
     } else ctx.fillText(`${st.name} ${game.bossWave ? '大型機' : `第${game.waveInStage}波`}　残${game.enemies.length}`, 14, safeTop + 72);
     ctx.textAlign = 'right'; ctx.fillText(String(game.score).padStart(6, '0'), W - 14, safeTop + 72);
