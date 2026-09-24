@@ -184,14 +184,16 @@ const SFX = (() => {
 })();
 
 // ================= models =================
-// A model is { v: vertices, e: all edges, f: faces, l: detail lines }.
-// Parts are convex lofts between rings; faces carry an outward normal and a shade for filled drawing.
+// A model is { v: vertices, e: all edges, f: faces, x: face edges, l: detail lines }.
+// Parts are convex lofts between rings. Faces carry an outward normal and a shade; face edges know
+// their two faces so only silhouettes and hard creases are stroked, which keeps rounded parts smooth.
 const mv = { add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]], mul: (a, k) => [a[0]*k, a[1]*k, a[2]*k],
+  lerp: (a, b, t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t],
   cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
   unit: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; } };
 const LIGHT = mv.unit([-0.45, 0.75, 0.5]);
 const AX = { x: [[0,0,1],[0,1,0]], y: [[1,0,0],[0,0,1]], z: [[1,0,0],[0,1,0]] };
-const mdl = () => ({ v: [], e: [], f: [], l: [] });
+const mdl = () => ({ v: [], e: [], f: [], x: [], l: [] });
 const both = fn => { fn(-1); fn(1); };
 function rb(c, U, V, w, h, k = 0) { // rectangle (k = 0) or chamfered octagon in the plane spanned by U, V
   const a = w / 2, b = h / 2, ca = a * k, cb = b * k;
@@ -199,13 +201,14 @@ function rb(c, U, V, w, h, k = 0) { // rectangle (k = 0) or chamfered octagon in
   return P.map(([u, v]) => [c[0] + u*U[0] + v*V[0], c[1] + u*U[1] + v*V[1], c[2] + u*U[2] + v*V[2]]);
 }
 const rr = (ax, c, w, h, k = 0) => rb(c, AX[ax][0], AX[ax][1], w, h, k);
-function circ(ax, c, r, n = 8) {
+function ell(ax, c, rx, ry, n = 10) {
   const [U, V] = AX[ax];
-  return Array.from({ length: n }, (_, i) => { const t = (i + 0.5) / n * 2 * Math.PI, u = r * Math.cos(t), v = r * Math.sin(t);
+  return Array.from({ length: n }, (_, i) => { const t = (i + 0.5) / n * 2 * Math.PI, u = rx * Math.cos(t), v = ry * Math.sin(t);
     return [c[0] + u*U[0] + v*V[0], c[1] + u*U[1] + v*V[1], c[2] + u*U[2] + v*V[2]]; });
 }
+const circ = (ax, c, r, n = 8) => ell(ax, c, r, r, n);
 function hull(m, R) { // loft through rings of equal vertex count
-  const n = R[0].length, b = m.v.length, all = R.flat();
+  const n = R[0].length, b = m.v.length, all = R.flat(), last = R.length - 1;
   m.v.push(...all);
   const g = all.reduce((s, p) => mv.add(s, mv.mul(p, 1 / all.length)), [0, 0, 0]);
   const face = ix => {
@@ -213,158 +216,164 @@ function hull(m, R) { // loft through rings of equal vertex count
     let nx = 0, ny = 0, nz = 0;
     for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length];
       nx += (p[1]-q[1])*(p[2]+q[2]); ny += (p[2]-q[2])*(p[0]+q[0]); nz += (p[0]-q[0])*(p[1]+q[1]); }
-    if (Math.hypot(nx, ny, nz) < 1e-6) return;
+    if (Math.hypot(nx, ny, nz) < 1e-6) return -1;
     const c = P.reduce((s, p) => mv.add(s, mv.mul(p, 1 / P.length)), [0, 0, 0]);
     let N = mv.unit([nx, ny, nz]);
     if (N[0]*(c[0]-g[0]) + N[1]*(c[1]-g[1]) + N[2]*(c[2]-g[2]) < 0) N = mv.mul(N, -1);
     const lit = Math.max(0, Math.min(1, (N[0]*LIGHT[0] + N[1]*LIGHT[1] + N[2]*LIGHT[2]) * 0.5 + 0.5));
     m.f.push({ i: ix, n: N, c, s: Math.round(lit * 8) });
+    return m.f.length - 1;
   };
-  for (let r = 0; r < R.length; r++) for (let i = 0; i < n; i++) m.e.push([b + r*n + i, b + r*n + (i + 1) % n]);
-  for (let r = 0; r + 1 < R.length; r++) for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    m.e.push([b + r*n + i, b + (r+1)*n + i]);
-    face([b + r*n + i, b + r*n + j, b + (r+1)*n + j, b + (r+1)*n + i]);
-  }
-  face([...Array(n).keys()].map(i => b + i));
-  face([...Array(n).keys()].map(i => b + (R.length - 1)*n + i));
+  const edge = (p, q, fa, fb) => {
+    m.e.push([p, q]);
+    const A = m.f[fa], B = m.f[fb];
+    m.x.push([p, q, fa, fb, !A || !B || A.n[0]*B.n[0] + A.n[1]*B.n[1] + A.n[2]*B.n[2] < 0.6]);
+  };
+  const cap0 = face([...Array(n).keys()].map(i => b + i));
+  const cap1 = face([...Array(n).keys()].map(i => b + last*n + i));
+  const S = [];
+  for (let r = 0; r < last; r++) S.push(Array.from({ length: n }, (_, i) => face([b + r*n + i, b + r*n + (i+1) % n, b + (r+1)*n + (i+1) % n, b + (r+1)*n + i])));
+  for (let r = 0; r <= last; r++) for (let i = 0; i < n; i++)
+    edge(b + r*n + i, b + r*n + (i+1) % n, r === 0 ? cap0 : S[r-1][i], r === last ? cap1 : S[r][i]);
+  for (let r = 0; r < last; r++) for (let i = 0; i < n; i++) edge(b + r*n + i, b + (r+1)*n + i, S[r][(i - 1 + n) % n], S[r][i]);
 }
 function seg(m, a, b) { const i = m.v.length; m.v.push(a, b); m.e.push([i, i + 1]); m.l.push([i, i + 1]); }
-function poly(m, P) { for (let i = 0; i < P.length; i++) seg(m, P[i], P[(i + 1) % P.length]); }
-// blocks: vertical (y0→y1), along z (z0→z1), along x (x0→x1); second size tapers the far end
+function poly(m, P, open) { for (let i = 0; i + (open ? 1 : 0) < P.length; i++) seg(m, P[i], P[(i + 1) % P.length]); }
+// rounded pod from a to b: elliptical rings (w across, d the other way) pinched at both ends
+const ROUND = [[0, 0.7], [0.2, 0.97], [0.8, 0.97], [1, 0.7]], TUBE = [[0, 1], [1, 1]];
+function pod(m, ax, a, b, w0, d0, w1 = w0, d1 = d0, n = 8, prof = ROUND) {
+  hull(m, prof.map(([t, k]) => ell(ax, mv.lerp(a, b, t), (w0 + (w1 - w0) * t) / 2 * k, (d0 + (d1 - d0) * t) / 2 * k, n)));
+}
+// rounded body: rows of [y, width, depth] as ellipses around (x, z)
+const Ve = (m, x, z, rows, n = 12) => hull(m, rows.map(([y, w, d]) => ell('y', [x, y, z], w / 2, d / 2, n)));
+// a line hugging an ellipse row (for vents and seams on rounded bodies)
+function hug(m, y, w, d, x0, x1, zc = 0) {
+  const P = []; for (let i = 0; i <= 6; i++) { const x = x0 + (x1 - x0) * i / 6, q = Math.max(0, 1 - (2 * x / w) ** 2);
+    P.push([x, y, zc + d / 2 * Math.sqrt(q) + 0.04]); }
+  poly(m, P, true);
+}
+// blocks for hard-edged hardware (weapons, launchers)
 const Vb = (m, x, z, y0, y1, w0, d0, w1 = w0, d1 = d0, k = 0) => hull(m, [rr('y', [x, y0, z], w0, d0, k), rr('y', [x, y1, z], w1, d1, k)]);
 const Zb = (m, x, y, z0, z1, w0, h0, w1 = w0, h1 = h0, k = 0) => hull(m, [rr('z', [x, y, z0], w0, h0, k), rr('z', [x, y, z1], w1, h1, k)]);
-const Xb = (m, y, z, x0, x1, d0, h0, d1 = d0, h1 = h0, k = 0) => hull(m, [rr('x', [x0, y, z], d0, h0, k), rr('x', [x1, y, z], d1, h1, k)]);
-const Vl = (m, x, z, rows, k) => hull(m, rows.map(([y, w, d]) => rr('y', [x, y, z], w, d, k)));
-function scl(m, k) { m.v = m.v.map(p => mv.mul(p, k)); for (const f of m.f) f.c = mv.mul(f.c, k); return m; }
 
 function modelGrunt() { // GR-7: mono-eye mass-production type with a drum-fed machine gun
   const m = mdl();
   both(s => {
-    const x = s * 2.2;
-    Zb(m, x, 0.6, -1.6, 2.8, 2.4, 1.2, 2.0, 0.7, 0.3);           // foot
-    Vb(m, x, 0, 1.1, 1.9, 1.4, 1.4);                               // ankle
-    Vb(m, x, 0.2, 1.8, 7.0, 2.2, 2.6, 2.8, 3.2, 0.3);             // shin
-    seg(m, [x - 0.6, 2.4, 1.6], [x - 0.6, 6.4, 1.83]); seg(m, [x + 0.6, 2.4, 1.6], [x + 0.6, 6.4, 1.83]);
-    Zb(m, x, 7.2, 0.9, 2.3, 2.4, 2.2, 1.6, 1.4, 0.3);             // knee guard
-    Vb(m, x, 0, 7.0, 10.6, 2.2, 2.4, 2.6, 2.8, 0.25);             // thigh
-    Vb(m, s * 3.3, 0, 9.0, 11.0, 0.5, 2.4, 0.6, 3.0);             // side skirt
-    Vb(m, s * 1.3, 1.7, 9.0, 10.8, 2.2, 0.4, 2.4, 0.5);           // front skirt
-    Xb(m, 15, 0, s * 3.2, s * 4.2, 1.6, 1.6);                     // shoulder joint
-    hull(m, [rr('x', [s * 3.8, 15.2, 0], 3.0, 2.4, 0.4), rr('x', [s * 5.2, 15.4, 0], 3.8, 3.4, 0.4), rr('x', [s * 6.6, 15.0, 0], 3.0, 2.2, 0.4)]); // pauldron
-    Vb(m, s * 5.2, 0, 11.6, 13.8, 1.6, 1.6, 1.8, 1.8, 0.3);       // upper arm
-    Xb(m, 11.4, 0, s * 4.4, s * 6.0, 1.7, 1.5, 1.7, 1.5, 0.3);    // elbow
-    Vb(m, s * 5.2, 0.2, 8.4, 11.2, 2.0, 2.2, 2.4, 2.6, 0.3);      // forearm
-    Vb(m, s * 5.2, 0.4, 7.2, 8.4, 1.4, 1.6, 1.6, 1.8, 0.2);       // hand
-    hull(m, [circ('y', [s * 1.3, 12.6, -3.1], 0.5), circ('y', [s * 1.3, 11.2, -3.1], 0.85)]); // thruster
-    for (let i = 0; i < 3; i++) { const y = 13.3 + i * 0.5, z = 1.85 + (y - 12.8) * 0.2; seg(m, [s * 1.0, y, z], [s * 2.4, y, z]); } // chest vents
-    seg(m, [s * 0.9, 16.5, 1.0], [s * 1.5, 16.0, 1.8]); seg(m, [s * 1.5, 16.0, 1.8], [s * 1.9, 15.1, 2.3]); // power cables
+    const x = s * 1.6;
+    pod(m, 'z', [x, 0.7, -1.2], [x, 0.6, 2.3], 1.7, 1.4, 1.3, 0.9);         // foot
+    pod(m, 'y', [x, 0.9, 0.1], [x, 7.0, 0.1], 1.9, 2.2, 1.5, 1.8);          // shin
+    pod(m, 'z', [x, 7.1, 0.5], [x, 7.3, 1.6], 1.4, 1.4, 1.0, 1.0);          // knee
+    pod(m, 'y', [x, 6.8, 0], [x, 10.4, 0], 1.5, 1.7, 1.9, 2.0);             // thigh
+    pod(m, 'y', [s * 2.7, 10.8, 0], [s * 2.9, 9.0, 0.1], 0.5, 2.2, 0.4, 2.4); // side skirt
+    pod(m, 'y', [s * 1.1, 10.8, 1.3], [s * 1.2, 9.0, 1.7], 1.8, 0.4, 1.6, 0.3); // front skirt
+    pod(m, 'x', [s * 3.0, 14.6, 0], [s * 5.4, 14.5, 0], 2.6, 2.2, 2.8, 2.4, 10); // pauldron
+    pod(m, 'y', [s * 4.3, 13.6, 0], [s * 4.4, 11.2, 0], 1.2, 1.2, 1.3, 1.3); // upper arm
+    pod(m, 'x', [s * 3.8, 11.1, 0], [s * 5.0, 11.1, 0], 1.3, 1.3);           // elbow
+    pod(m, 'y', [s * 4.5, 11.2, 0.2], [s * 4.6, 8.2, 0.3], 1.5, 1.6, 1.8, 1.9); // forearm
+    pod(m, 'y', [s * 4.6, 8.3, 0.35], [s * 4.6, 7.1, 0.4], 1.1, 1.2);        // hand
+    pod(m, 'y', [s * 1.0, 12.6, -2.9], [s * 1.0, 11.3, -2.9], 0.9, 0.9, 1.3, 1.3, 8, [[0, 0.6], [1, 1]]); // thruster bell
+    for (let i = 0; i < 3; i++) hug(m, 13.5 + i * 0.45, 4.8, 3.1, s * 0.7, s * 1.9); // chest vents
+    seg(m, [s * 0.7, 16.2, 0.9], [s * 1.3, 15.6, 1.4]);                         // power cable
   });
-  Vb(m, 0, 0.2, 8.6, 10.6, 1.8, 2.4, 3.6, 3.0, 0.3);              // crotch
-  Vb(m, 0, 0, 10.4, 11.6, 5.2, 3.0, 5.0, 3.0, 0.3);               // waist
-  Vb(m, 0, 0, 11.6, 12.8, 4.2, 2.8, 4.4, 3.0, 0.3);               // abdomen
-  Vl(m, 0, 0, [[12.8, 6.0, 3.6], [14.8, 7.2, 4.4], [16.0, 6.4, 3.8]], 0.3); // chest
-  Zb(m, 0, 14.0, 1.8, 2.5, 2.0, 1.4, 1.6, 1.0, 0.3);              // hatch
-  Vb(m, 0, 0, 16.0, 16.6, 3.0, 2.4, 2.6, 2.2, 0.3);               // collar
-  Vl(m, 0, 0.2, [[16.4, 2.4, 2.6], [17.6, 2.6, 2.8], [18.4, 1.8, 2.0]], 0.35); // head
-  Zb(m, 0, 17.2, 1.2, 1.75, 2.2, 0.55, 2.1, 0.45);                // visor slot
-  poly(m, circ('z', [0.35, 17.2, 1.8], 0.2, 6));                   // mono-eye
-  seg(m, [0, 18.4, 0.3], [0, 19.2, -0.8]);                         // antenna
-  Vb(m, 0, -2.6, 12.2, 15.8, 4.4, 1.8, 4.0, 1.6, 0.3);            // backpack
-  Zb(m, 5.2, 7.6, -1.2, 3.4, 1.0, 1.6, 1.0, 1.4, 0.2);            // gun body
-  Zb(m, 5.2, 7.9, 3.4, 6.8, 0.45, 0.45);                           // barrel
-  Vb(m, 5.2, 0.9, 6.0, 7.0, 0.9, 1.4);                             // magazine
-  Zb(m, 5.2, 8.6, 0.2, 1.8, 0.5, 0.5);                             // scope
-  return scl(m, 0.86);
+  pod(m, 'y', [0, 10.6, 0.2], [0, 8.6, 0.3], 2.6, 2.4, 1.4, 1.8);            // crotch
+  Ve(m, 0, 0, [[9.9, 3.0, 2.2], [10.6, 3.6, 2.4], [11.4, 3.2, 2.2]]);         // waist
+  Ve(m, 0, 0, [[11.2, 3.0, 2.2], [12.4, 3.8, 2.6], [13.8, 5.0, 3.2], [15.0, 4.8, 3.0], [15.8, 3.6, 2.4]]); // torso
+  pod(m, 'z', [0, 13.3, 1.1], [0, 13.3, 1.75], 1.4, 1.1, 1.2, 0.9);          // hatch
+  pod(m, 'y', [0, 15.5, 0], [0, 16.3, 0], 1.2, 1.2);                          // neck
+  Ve(m, 0, 0.1, [[16.0, 1.2, 1.4], [16.5, 2.0, 2.2], [17.3, 2.1, 2.3], [17.9, 1.6, 1.8], [18.2, 0.6, 0.8]]); // head
+  hug(m, 17.0, 2.1, 2.3, -0.8, 0.8, 0.1);                                      // eye rail
+  poly(m, ell('z', [0.3, 17.0, 1.28], 0.18, 0.18, 6));                         // mono-eye
+  seg(m, [0, 18.2, 0.1], [0, 19.0, -0.9]);                                     // antenna
+  pod(m, 'y', [0, 12.4, -2.0], [0, 15.4, -2.0], 3.0, 1.6, 2.8, 1.4);         // backpack
+  pod(m, 'z', [4.6, 7.6, -1.0], [4.6, 7.6, 3.0], 0.8, 1.3, 0.8, 1.1);        // gun body
+  pod(m, 'z', [4.6, 7.8, 3.0], [4.6, 7.8, 6.0], 0.35, 0.35, 0.35, 0.35, 6, TUBE); // barrel
+  pod(m, 'x', [4.1, 6.8, 1.0], [5.1, 6.8, 1.0], 1.4, 1.4, 1.4, 1.4, 10);     // drum magazine
+  return m;
 }
 function modelFast() { // VX-3: wasp-motif high-mobility type with claws, twin wings and a stinger
   const m = mdl();
   both(s => {
-    const x = s * 1.5;
-    Zb(m, x, 0.5, -1.0, 2.6, 1.4, 1.0, 0.3, 0.3, 0.2);             // pointed foot
-    Vb(m, x, 0, 0.9, 5.2, 1.0, 1.2, 1.5, 1.8, 0.3);                // shin
-    Zb(m, x, 5.4, 0.3, 2.2, 1.2, 1.1, 0.15, 0.15);                 // knee spike
-    Vb(m, x, 0, 5.2, 8.8, 1.4, 1.6, 1.8, 2.0, 0.3);                // thigh
-    Xb(m, 13.4, 0, s * 2.2, s * 3.9, 2.2, 1.8, 1.4, 1.1, 0.3);     // shoulder
-    hull(m, [rr('y', [s * 3.3, 14.1, 0], 1.0, 1.0), rr('y', [s * 3.9, 15.6, -0.4], 0.1, 0.1)]); // shoulder horn
-    Vb(m, s * 3.6, 0.2, 10.6, 12.8, 1.0, 1.0, 1.2, 1.2, 0.3);      // upper arm
-    Vb(m, s * 3.7, 0.4, 7.8, 10.6, 1.4, 1.5, 1.2, 1.2, 0.3);       // forearm
-    for (const o of [-0.4, 0, 0.4]) hull(m, [rr('z', [s * 3.7 + o, 7.6, 0.6], 0.3, 0.6), rr('z', [s * 3.7 + o * 1.4, 6.4, 3.2], 0.06, 0.1)]); // claws
-    for (const W of [[[2, 13.6], [9, 17.4], [7.6, 14.2], [5.6, 11.6]], [[2, 12.4], [7.8, 11.4], [6.6, 9.4], [3, 10.6]]]) {
+    const x = s * 1.2;
+    pod(m, 'z', [x, 0.55, -0.8], [x, 0.45, 2.4], 1.0, 1.1, 0.3, 0.3);          // pointed foot
+    pod(m, 'y', [x, 0.6, 0], [x, 5.4, 0], 0.9, 1.1, 1.3, 1.5);                // shin
+    Zb(m, x, 5.4, 0.3, 2.0, 0.9, 0.9, 0.1, 0.1);                               // knee spike
+    pod(m, 'y', [x, 5.2, 0], [x, 8.8, 0], 1.2, 1.4, 1.5, 1.6);                // thigh
+    pod(m, 'x', [s * 1.9, 13.3, 0], [s * 3.4, 13.4, 0], 1.8, 1.5, 1.2, 1.0); // shoulder
+    hull(m, [circ('y', [s * 2.9, 13.9, 0], 0.4, 6), circ('y', [s * 3.5, 15.4, -0.4], 0.04, 6)]); // shoulder horn
+    pod(m, 'y', [s * 3.1, 12.8, 0.1], [s * 3.2, 10.6, 0.2], 0.9, 0.9, 1.0, 1.0); // upper arm
+    pod(m, 'y', [s * 3.2, 10.7, 0.3], [s * 3.3, 7.8, 0.4], 1.2, 1.3, 1.0, 1.0); // forearm
+    for (const o of [-0.35, 0, 0.35]) hull(m, [circ('z', [s * 3.3 + o, 7.7, 0.6], 0.16, 6), circ('z', [s * 3.3 + o * 1.4, 6.4, 3.0], 0.03, 6)]); // claws
+    for (const W of [[[1.8, 13.6], [9, 17.4], [7.6, 14.2], [5.6, 11.6]], [[1.8, 12.4], [7.8, 11.4], [6.6, 9.4], [3, 10.6]]]) {
       const P = W.map(([u, v]) => [s * u, v]);
-      hull(m, [P.map(([u, v]) => [u, v, -1.9]), P.map(([u, v]) => [u, v, -2.2])]); // wing membrane
-      const [a, b, c, d] = P.map(([u, v]) => [u, v, -1.85]);
-      seg(m, a, mv.mul(mv.add(b, c), 0.5)); seg(m, a, mv.mul(mv.add(c, d), 0.5)); // veins
+      hull(m, [P.map(([u, v]) => [u, v, -1.5]), P.map(([u, v]) => [u, v, -1.7])]); // wing membrane
+      const [a, b, c, d] = P.map(([u, v]) => [u, v, -1.45]);
+      seg(m, a, mv.lerp(b, c, 0.5)); seg(m, a, mv.lerp(c, d, 0.5));           // veins
     }
-    seg(m, [s * 0.7, 15.2, 0.6], [s * 0.2, 15.0, 1.25]);           // V-slit eye
+    seg(m, [s * 0.6, 15.15, 0.55], [s * 0.2, 14.95, 1.05]);                   // V-slit eye
   });
-  Vb(m, 0, 0, 8.4, 10.0, 2.0, 1.8, 3.2, 2.2, 0.3);                 // waist
-  Vb(m, 0, 0, 10.0, 11.0, 2.2, 1.8, 2.6, 2.0, 0.3);                // abdomen
-  Vl(m, 0, 0, [[11, 3.4, 2.4], [12.6, 5.2, 3.0], [14, 4.0, 2.4]], 0.35); // chest
-  seg(m, [0, 11.4, 1.3], [0, 13.6, 1.3]);                           // chest keel
-  Vb(m, 0, 0, 14, 14.5, 1.2, 1.2);                                  // neck
-  hull(m, [rr('z', [0, 15, -1.2], 1.6, 1.6, 0.3), rr('z', [0, 15, 0.4], 1.8, 1.7, 0.3), rr('z', [0, 14.8, 1.5], 0.5, 0.7, 0.3)]); // pointed head
-  hull(m, [rr('z', [0, 15.9, -0.8], 0.15, 0.4), rr('z', [0, 17.4, 0.8], 0.05, 0.1)]); // crest
-  hull(m, [rr('z', [0, 9.4, -0.9], 1.6, 1.4, 0.4), rr('z', [0, 8.8, -3.0], 1.9, 1.7, 0.4), rr('z', [0, 7.6, -4.8], 0.1, 0.1, 0.4)]); // stinger
-  poly(m, rr('z', [0, 9.15, -2.0], 1.9, 1.7, 0.4));                 // stinger band
-  Vb(m, 0, -1.6, 11.0, 13.6, 1.8, 1.0, 1.4, 0.8, 0.3);             // back thruster
+  Ve(m, 0, 0, [[8.4, 1.8, 1.6], [9.4, 2.6, 1.9], [10.2, 2.0, 1.6]]);          // waist
+  Ve(m, 0, 0, [[10.0, 1.8, 1.4], [11.0, 2.6, 1.9], [12.2, 3.8, 2.4], [13.2, 4.0, 2.4], [13.9, 2.8, 1.9], [14.3, 1.2, 1.0]]); // chest
+  pod(m, 'y', [0, 14.0, 0], [0, 14.6, 0], 0.9, 0.9);                          // neck
+  hull(m, [[-1.1, 0.5, 0.5], [-0.4, 0.8, 0.8], [0.6, 0.75, 0.7], [1.5, 0.2, 0.25]].map(([z, rx, ry]) => ell('z', [0, 15.0 - z * 0.1, z], rx, ry))); // pointed head
+  hull(m, [rr('z', [0, 15.8, -0.8], 0.15, 0.4), rr('z', [0, 17.2, 0.8], 0.05, 0.1)]); // crest
+  hull(m, [[-0.8, 9.4, 0.75, 0.65], [-2.0, 9.0, 0.95, 0.85], [-3.4, 8.4, 0.75, 0.65], [-4.8, 7.6, 0.04, 0.04]].map(([z, y, rx, ry]) => ell('z', [0, y, z], rx, ry))); // stinger
+  for (const [z, y] of [[-1.6, 9.15], [-2.5, 8.8]]) poly(m, ell('z', [0, y, z], 1.0, 0.9));  // stinger bands
+  pod(m, 'y', [0, 11.0, -1.3], [0, 13.4, -1.3], 1.6, 0.9, 1.2, 0.7);         // back thruster
   return m;
 }
 function modelHeavy() { // HK-9: artillery type with shoulder cannon and missile pod
   const m = mdl();
+  const torso = [[10.4, 3.6, 2.6], [11.6, 4.8, 3.2], [13.2, 6.0, 3.6], [14.8, 5.6, 3.4], [15.6, 3.8, 2.6]];
   both(s => {
-    const x = s * 3;
-    Zb(m, x, 0.7, -2.4, 3.2, 3.8, 1.4, 3.2, 0.9, 0.2);             // foot
-    Vb(m, x, 0, 1.3, 2.0, 2.0, 2.0);                                // ankle
-    Vb(m, x, 0, 1.9, 6.8, 3.4, 3.6, 4.2, 4.4, 0.25);               // shin
-    Vb(m, x, 2.3, 2.6, 6.4, 3.0, 0.5, 3.6, 0.6);                   // shin armor
-    Zb(m, x, 7.3, 0.8, 2.9, 3.0, 2.4, 2.2, 1.6, 0.3);              // knee
-    Vb(m, x, 0, 6.8, 9.4, 3.2, 3.4, 3.6, 3.6, 0.25);               // thigh
-    Vb(m, s * 6.6, 0, 12.0, 15.6, 3.6, 4.6, 3.2, 4.0, 0.25);       // shoulder block
-    for (const y of [13.0, 14.0]) seg(m, [s * 8.45, y, -1.6], [s * 8.45, y, 1.6]); // shoulder ribs
-    Vb(m, s * 6.6, 0, 9.4, 12.0, 2.2, 2.2);                         // upper arm
-    Vb(m, s * 6.6, 0.4, 6.2, 9.4, 3.0, 3.4, 3.2, 3.6, 0.25);       // forearm
-    Vb(m, s * 6.6, 0.6, 5.0, 6.2, 2.0, 2.2, 2.2, 2.4, 0.2);        // fist
-    hull(m, [circ('y', [s * 2.2, 13, -3.6], 0.5), circ('y', [s * 2.4, 17.0, -3.8], 0.45)]); // exhaust stack
-    for (let i = 0; i < 3; i++) seg(m, [s * 1.2, 11.4 + i * 0.7, 2.62 + i * 0.12], [s * 3.2, 11.4 + i * 0.7, 2.62 + i * 0.12]); // chest vents
+    const x = s * 2.0;
+    pod(m, 'z', [x, 0.75, -1.8], [x, 0.65, 2.6], 2.4, 1.5, 2.0, 1.0);          // foot
+    pod(m, 'y', [x, 0.9, 0], [x, 7.2, 0], 2.6, 2.8, 2.0, 2.3);                // shin
+    pod(m, 'y', [x, 2.6, 1.25], [x, 6.6, 1.15], 1.9, 0.6, 1.5, 0.5);          // shin armor
+    pod(m, 'z', [x, 7.4, 0.3], [x, 7.6, 1.8], 1.8, 1.6, 1.3, 1.2);            // knee
+    pod(m, 'y', [x, 7.2, 0], [x, 10.4, 0], 1.9, 2.1, 2.3, 2.4);               // thigh
+    pod(m, 'x', [s * 3.2, 14.8, 0], [s * 6.0, 14.6, 0], 3.2, 2.8, 3.0, 2.6, 10); // shoulder
+    pod(m, 'y', [s * 5.0, 13.6, 0], [s * 5.1, 11.2, 0], 1.4, 1.4);            // upper arm
+    pod(m, 'y', [s * 5.2, 11.3, 0.2], [s * 5.3, 7.8, 0.3], 2.0, 2.2, 2.2, 2.4); // forearm
+    pod(m, 'y', [s * 5.3, 7.9, 0.4], [s * 5.3, 6.7, 0.5], 1.4, 1.5);          // fist
+    pod(m, 'y', [s * 1.6, 12.4, -2.9], [s * 1.7, 16.4, -3.0], 0.8, 0.8, 0.7, 0.7, 8, TUBE); // exhaust stack
+    for (let i = 0; i < 3; i++) hug(m, 12.2 + i * 0.5, 5.2, 3.3, s * 0.7, s * 2.1); // chest vents
   });
-  Vb(m, 0, 0, 8.8, 10.6, 8.4, 4.4, 8.0, 4.4, 0.3);                 // hip
-  Vl(m, 0, 0, [[10.6, 7.0, 4.6], [13.0, 9.8, 5.8], [15.2, 9.0, 5.0]], 0.25); // torso
-  Zb(m, 0, 13.6, 2.7, 3.2, 3.0, 2.0, 2.4, 1.6, 0.3);              // chest boss
-  Vb(m, 0, 0.6, 15.2, 16.9, 2.8, 2.8, 2.4, 2.4, 0.3);             // head
-  Zb(m, 0, 16.1, 1.9, 2.2, 2.4, 0.55);                             // visor
-  Vb(m, 0, -3.8, 11.0, 15.2, 6.0, 2.2, 5.6, 2.0, 0.25);           // backpack
-  Vb(m, 5.4, -0.6, 15.6, 16.8, 2.4, 2.6);                          // cannon mount
-  Zb(m, 5.4, 17.6, -4.4, 1.2, 2.4, 2.2, 2.2, 2.0, 0.3);           // breech
-  Zb(m, 5.4, 17.6, 1.2, 7.6, 1.1, 1.1, 0.9, 0.9, 0.35);           // barrel
-  Zb(m, 5.4, 17.6, 7.6, 8.8, 1.6, 1.6, 1.6, 1.6, 0.35);           // muzzle brake
-  Vb(m, -5.6, -0.2, 15.6, 17.8, 3.2, 3.0);                         // missile pod
-  for (const px of [-6.3, -4.9]) for (const py of [16.2, 17.2]) poly(m, circ('z', [px, py, 1.35], 0.4, 6)); // missile tubes
+  pod(m, 'y', [0, 10.8, 0.1], [0, 9.0, 0.2], 3.4, 2.6, 2.0, 2.0);            // hip
+  Ve(m, 0, 0, torso);                                                          // torso
+  pod(m, 'z', [0, 13.9, 1.3], [0, 13.9, 2.0], 2.2, 1.4, 1.8, 1.1);           // chest boss
+  Ve(m, 0, 0.4, [[15.3, 1.6, 1.6], [16.0, 2.2, 2.2], [16.8, 1.9, 2.0], [17.2, 0.8, 0.9]]); // head
+  hug(m, 16.2, 2.2, 2.2, -0.8, 0.8, 0.4);                                      // visor
+  pod(m, 'y', [0, 11.8, -2.6], [0, 15.2, -2.6], 4.0, 1.8, 3.6, 1.6);         // backpack
+  pod(m, 'y', [4.2, 15.6, -0.6], [4.2, 16.6, -0.6], 1.6, 1.8);               // cannon mount
+  pod(m, 'z', [4.2, 17.0, -3.6], [4.2, 17.0, 1.0], 1.8, 1.8, 1.6, 1.6, 10);  // breech
+  pod(m, 'z', [4.2, 17.0, 1.0], [4.2, 17.0, 7.0], 0.8, 0.8, 0.7, 0.7, 8, TUBE); // barrel
+  pod(m, 'z', [4.2, 17.0, 7.0], [4.2, 17.0, 8.2], 1.3, 1.3, 1.3, 1.3, 8);    // muzzle brake
+  Vb(m, -4.4, -0.2, 15.4, 17.6, 2.6, 2.4, 2.6, 2.4, 0.3);                    // missile pod
+  for (const px of [-4.95, -3.85]) for (const py of [15.95, 16.95]) poly(m, circ('z', [px, py, 1.05], 0.35, 6)); // missile tubes
   return m;
 }
 function modelTitan() { // TX-0: tracked heavy walker with arm cannons and a chest beam cannon
   const m = mdl();
   both(s => {
-    const x = s * 5.2;
-    Zb(m, x, 1.8, -6.4, 6.4, 2.6, 3.6, 2.6, 3.6, 0.45);            // track unit
-    for (let i = -2; i <= 2; i++) poly(m, circ('x', [x + s * 1.35, 1.8, i * 2.4], 1.0)); // road wheels
-    Zb(m, x, 3.9, -5.6, 5.6, 2.4, 0.6);                             // fender
-    Xb(m, 10.6, 0, s * 4.4, s * 5.4, 2.0, 2.0);                     // shoulder joint
-    Vb(m, s * 6.6, 0, 9.6, 12.4, 3.4, 4.2, 3.0, 3.6, 0.3);         // shoulder
-    Vb(m, s * 6.6, 0.2, 7.2, 9.6, 2.2, 2.2);                        // upper arm
-    Vb(m, s * 6.6, 0.6, 4.2, 7.2, 3.0, 3.4, 3.2, 3.6, 0.25);       // forearm
-    Zb(m, s * 6.6, 5.2, 1.6, 7.4, 1.2, 1.2, 1.0, 1.0, 0.35);       // arm cannon
-    poly(m, circ('z', [s * 6.6, 5.2, 7.45], 0.35, 6));              // muzzle
-    seg(m, [s * 0.9, 14.1, -0.2], [s * 1.6, 15.6, -1.0]);           // antenna
+    const x = s * 4.6;
+    Zb(m, x, 1.8, -6.0, 6.0, 2.2, 3.6, 2.2, 3.6, 0.45);                       // track unit
+    for (let i = -2; i <= 2; i++) poly(m, circ('x', [x + s * 1.15, 1.8, i * 2.3], 0.95)); // road wheels
+    pod(m, 'z', [x, 3.9, -5.4], [x, 3.9, 5.4], 2.2, 0.6, 2.2, 0.6);           // fender
+    pod(m, 'x', [s * 3.4, 10.8, 0], [s * 6.4, 10.6, 0], 3.2, 3.0, 2.8, 2.6, 10); // shoulder
+    pod(m, 'y', [s * 5.6, 9.8, 0.1], [s * 5.7, 7.4, 0.2], 1.6, 1.6);          // upper arm
+    pod(m, 'y', [s * 5.8, 7.6, 0.4], [s * 5.9, 4.2, 0.6], 2.2, 2.4, 2.4, 2.6); // forearm
+    pod(m, 'z', [s * 5.9, 5.2, 1.4], [s * 5.9, 5.2, 7.2], 1.0, 1.0, 0.8, 0.8, 8, TUBE); // arm cannon
+    poly(m, circ('z', [s * 5.9, 5.2, 7.25], 0.3, 6));                          // muzzle
+    seg(m, [s * 0.7, 13.9, 0.2], [s * 1.3, 15.4, -0.6]);                       // antenna
   });
-  Vb(m, 0, 0, 1.2, 4.2, 7.6, 11, 7.0, 10, 0.2);                    // lower hull
-  Vl(m, 0, 0, [[4.2, 6.0, 6.0], [6.4, 7.6, 6.6], [9.8, 9.4, 6.4], [12.0, 7.8, 5.2]], 0.3); // torso
-  Vl(m, 0, 0.6, [[12.0, 3.2, 3.2], [13.4, 3.4, 3.4], [14.2, 2.4, 2.4]], 0.4); // dome head
-  Zb(m, 0, 13.0, 2.1, 2.5, 2.6, 0.5, 2.4, 0.4);                   // visor
-  Zb(m, 0, 8.6, 3.0, 4.6, 2.8, 2.8, 2.4, 2.4, 0.4);               // chest cannon housing
-  poly(m, circ('z', [0, 8.6, 4.65], 0.9, 10)); poly(m, circ('z', [0, 8.6, 4.65], 0.45, 8)); // lens
-  Vb(m, 0, -4.2, 6.0, 11.0, 6.0, 2.4, 5.0, 2.0, 0.3);             // reactor
-  for (let i = 0; i < 4; i++) seg(m, [-2.2, 7 + i, -5.45], [2.2, 7 + i, -5.45]); // cooling fins
+  pod(m, 'y', [0, 1.2, 0], [0, 4.4, 0], 6.8, 9.4, 6.2, 8.4, 12);             // lower hull
+  Ve(m, 0, 0, [[4.2, 4.4, 4.4], [6.0, 6.0, 5.2], [8.6, 7.2, 5.4], [10.8, 6.4, 4.6], [12.0, 3.8, 3.2]]); // torso
+  Ve(m, 0, 0.5, [[11.8, 2.2, 2.2], [12.6, 2.8, 2.8], [13.6, 2.6, 2.6], [14.2, 1.2, 1.2]]); // dome head
+  hug(m, 12.9, 2.8, 2.8, -1.0, 1.0, 0.5);                                      // visor
+  pod(m, 'z', [0, 8.2, 2.0], [0, 8.2, 3.3], 2.6, 2.6, 2.2, 2.2, 12);         // chest cannon housing
+  poly(m, circ('z', [0, 8.2, 3.25], 0.8, 10)); poly(m, circ('z', [0, 8.2, 3.25], 0.4, 8)); // lens
+  pod(m, 'y', [0, 5.8, -3.4], [0, 11.0, -3.4], 4.8, 2.2, 4.0, 1.8, 10);      // reactor
+  for (let i = 0; i < 4; i++) seg(m, [-1.6, 7 + i, -4.45], [1.6, 7 + i, -4.45]); // cooling fins
   return m;
 }
 function modelFortress() { // FX-9: ring fortress with core hangars and four turrets
@@ -377,15 +386,15 @@ function modelFortress() { // FX-9: ring fortress with core hangars and four tur
     hull(m, [sec(a), sec(b)]);
     for (const y of [-1, 1]) seg(m, at(a, R + 2.05, y), at(b, R + 2.05, y)); // hull plating
   }
-  hull(m, [[-20, 1.2], [-15, 3], [-10, 6], [-4, 8], [4, 8], [10, 6], [16, 3.5], [24, 0.4]].map(([y, r]) => circ('y', [0, y, 0], r))); // core
+  hull(m, [[-20, 1.2], [-15, 3], [-10, 6], [-4, 8], [4, 8], [10, 6], [16, 3.5], [24, 0.4]].map(([y, r]) => circ('y', [0, y, 0], r, 12))); // core
   for (let k = 0; k < 4; k++) {
-    const a = k * Math.PI / 2, c = at(a, 7.45, 0);
-    poly(m, rb(c, tan(a), UP, 4, 5));                               // hangar door
-    for (const y of [-1, 0, 1]) seg(m, mv.add(c, [-2 * Math.sin(a), y, 2 * Math.cos(a)]), mv.add(c, [2 * Math.sin(a), y, -2 * Math.cos(a)]));
+    const a = k * Math.PI / 2, c = at(a, 7.95, 0);
+    poly(m, rb(c, tan(a), UP, 3.6, 5));                             // hangar door
+    for (const y of [-1, 0, 1]) seg(m, mv.add(c, [-1.8 * Math.sin(a), y, 1.8 * Math.cos(a)]), mv.add(c, [1.8 * Math.sin(a), y, -1.8 * Math.cos(a)]));
     const s = a + Math.PI / 4, T = tan(s);
-    hull(m, [rb(at(s, 7, 0), T, UP, 3, 3), rb(at(s, 32, 0), T, UP, 2.4, 2.4)]); // spoke
+    hull(m, [rb(at(s, 7, 0), T, UP, 3, 3, 0.3), rb(at(s, 32, 0), T, UP, 2.4, 2.4, 0.3)]); // spoke
     const base = at(s, R, 3);
-    hull(m, [circ('y', base, 2.2), circ('y', mv.add(base, [0, 2, 0]), 1.8)]); // turret
+    pod(m, 'y', base, mv.add(base, [0, 2.4, 0]), 4.4, 4.4, 3.4, 3.4, 10, [[0, 1], [0.6, 1], [1, 0.7]]); // turret
     const d = mv.unit([Math.cos(s), 0.5, Math.sin(s)]), V = mv.unit(mv.cross(T, d));
     for (const o of [-0.6, 0.6]) { const p0 = mv.add(mv.add(base, [0, 1.4, 0]), mv.mul(T, o));
       hull(m, [rb(p0, T, V, 0.6, 0.6), rb(mv.add(p0, mv.mul(d, 7)), T, V, 0.5, 0.5)]); } // twin barrels
@@ -827,13 +836,17 @@ function hdgLabel(n) {
   return n === 0 ? 'N' : n === 90 ? 'E' : n === 180 ? 'S' : n === 270 ? 'W' : String(n / 10).padStart(2, '0');
 }
 const SHADES = Array.from({ length: 9 }, (_, i) => `rgba(${6 + i * 3},${22 + i * 9},${14 + i * 5},0.85)`);
-// Painter's algorithm: visible faces and detail lines sorted far to near. pts are [x, y, depth].
+// Painter's algorithm, far to near: filled faces, then silhouette/crease edges and detail lines
+// just in front of the faces they sit on. pts are [x, y, depth].
 function drawModel(c, M, pts, visible, bias) {
+  const vis = M.f.map(f => f.i.every(i => pts[i]) && visible(f));
   const items = [];
-  for (const f of M.f) {
-    let z = 0, ok = true;
-    for (const i of f.i) { const p = pts[i]; if (!p) { ok = false; break; } z += p[2]; }
-    if (ok && visible(f)) items.push([z / f.i.length, f]);
+  M.f.forEach((f, k) => { if (vis[k]) { let z = 0; for (const i of f.i) z += pts[i][2]; items.push([z / f.i.length, f]); } });
+  for (const x of M.x) {
+    const a = pts[x[0]], b = pts[x[1]];
+    if (!a || !b) continue;
+    const va = x[2] >= 0 && vis[x[2]], vb = x[3] >= 0 && vis[x[3]];
+    if (va !== vb || (x[4] && va)) items.push([(a[2] + b[2]) / 2 - bias, x]);
   }
   for (const l of M.l) { const a = pts[l[0]], b = pts[l[1]]; if (a && b) items.push([(a[2] + b[2]) / 2 - bias, l]); }
   items.sort((a, b) => b[0] - a[0]);
@@ -843,8 +856,7 @@ function drawModel(c, M, pts, visible, bias) {
       const P = it.i; c.moveTo(pts[P[0]][0], pts[P[0]][1]);
       for (let k = 1; k < P.length; k++) c.lineTo(pts[P[k]][0], pts[P[k]][1]);
       c.closePath(); c.fillStyle = SHADES[it.s]; c.fill();
-    } else { c.moveTo(pts[it[0]][0], pts[it[0]][1]); c.lineTo(pts[it[1]][0], pts[it[1]][1]); }
-    c.stroke();
+    } else { c.moveTo(pts[it[0]][0], pts[it[0]][1]); c.lineTo(pts[it[1]][0], pts[it[1]][1]); c.stroke(); }
   }
 }
 function drawEnemies() {
@@ -1097,17 +1109,59 @@ function drawRadar() {
   c.fillStyle = PHOS; c.beginPath(); c.moveTo(ox, oy - 5 * s); c.lineTo(ox - 4 * s, oy + 4 * s); c.lineTo(ox + 4 * s, oy + 4 * s); c.closePath(); c.fill();
   drawDamage(c, 6 * s, 6 * s, s);
 }
+// Pilot's own mech seen from behind, one silhouette per machine, on a 20x34 grid.
+// Shapes are [part, points, open]; part is an index into PARTS (0 左脚 1 右脚 2 左腕 3 頭部 4 右腕) or -1 for the frame.
+const mir = P => P.map(([x, y]) => [20 - x, y]);
+function figure({ chest, pack, waist, skirt, head, fin, pauldron, arm, hand, thigh, shin, foot, extra }) {
+  const sides = (part, ...polys) => polys.flatMap(P => [[part, P], [part + 1, mir(P)]]);
+  const arms = [pauldron, arm, hand].flatMap(P => [[2, P], [4, mir(P)]]);
+  return [...(extra.back || []), [-1, waist], [-1, skirt], [-1, chest], [-1, pack], ...(extra.frame || []),
+    ...sides(0, thigh, shin, foot), ...arms, ...(extra.arms || []), [3, head], [3, fin, true]];
+}
+const FIGURES = {
+  zx: figure({ // versatile: wing binders, shield, rifle
+    chest: [[6.4,7],[13.6,7],[14.4,8.6],[13.2,12.8],[12,14],[8,14],[6.8,12.8],[5.6,8.6]], pack: [[7.8,8.2],[12.2,8.2],[12.2,12.2],[7.8,12.2]],
+    waist: [[8,14],[12,14],[12.4,17.4],[7.6,17.4]], skirt: [[7.4,16.4],[12.6,16.4],[12.2,19.6],[7.8,19.6]],
+    head: [[8.8,2.8],[11.2,2.8],[11.8,3.8],[11.8,5.8],[11,6.6],[9,6.6],[8.2,5.8],[8.2,3.8]], fin: [[6.2,0.6],[10,3.4],[13.8,0.6]],
+    pauldron: [[2.2,6.8],[5.8,6.8],[6.4,8.4],[5.8,10.2],[2,10.2],[1.4,8.4]], arm: [[2.6,10.2],[5.2,10.2],[5.4,15],[5,17.6],[2.8,17.6],[2.4,15]],
+    hand: [[2.8,17.6],[5,17.6],[4.8,19.2],[3,19.2]],
+    thigh: [[6.6,17.6],[9.4,17.6],[9.2,22],[6.8,22]], shin: [[6.4,22.2],[9.6,22.2],[10,28.4],[9.2,31.2],[6.8,31.2],[6,28.4]], foot: [[6,31.4],[10,31.4],[10.6,33.6],[5.4,33.6]],
+    extra: { back: [[-1, [[8,9.2],[1.6,3.4],[2.8,9.6],[7.6,12]]], [-1, mir([[8,9.2],[1.6,3.4],[2.8,9.6],[7.6,12]])]],
+      frame: [[-1, [[8.4,8.2],[7.8,5.6]], true], [-1, [[11.6,8.2],[12.2,5.6]], true]],
+      arms: [[2, [[0.2,10.4],[2.4,10],[2.4,19],[1.3,21.4],[0.2,19]]], [4, [[15.6,17.8],[17,17.8],[17.4,26],[16.2,26]]]] } }),
+  hv: figure({ // heavy: twin back cannons, gatling
+    chest: [[5.2,7],[14.8,7],[15.6,8.8],[14.4,13.6],[12.8,14.6],[7.2,14.6],[5.6,13.6],[4.4,8.8]], pack: [[7.2,8.4],[12.8,8.4],[12.8,13],[7.2,13]],
+    waist: [[7.4,14.6],[12.6,14.6],[13,17.6],[7,17.6]], skirt: [[6.6,16.4],[13.4,16.4],[13,20],[7,20]],
+    head: [[8.6,3.6],[11.4,3.6],[12,4.6],[12,6.6],[11.2,7.2],[8.8,7.2],[8,6.6],[8,4.6]], fin: [[8.4,2.4],[10,4],[11.6,2.4]],
+    pauldron: [[1.2,6.6],[5.4,6.6],[6,8.6],[5.4,11],[1,11],[0.4,8.6]], arm: [[1.6,11],[4.8,11],[5,16],[4.6,18.4],[1.8,18.4],[1.4,16]],
+    hand: [[1.8,18.4],[4.6,18.4],[4.4,20.4],[2,20.4]],
+    thigh: [[5.8,17.8],[9.6,17.8],[9.4,22],[6,22]], shin: [[5.4,22.2],[9.8,22.2],[10.4,28.6],[9.6,31.4],[5.6,31.4],[4.8,28.6]], foot: [[4.8,31.6],[10.2,31.6],[10.8,33.8],[4.2,33.8]],
+    extra: { back: [[-1, [[6.4,0.4],[8.4,0.4],[8.4,8.6],[6.4,8.6]]], [-1, mir([[6.4,0.4],[8.4,0.4],[8.4,8.6],[6.4,8.6]])]],
+      arms: [[4, [[15.6,18],[17.8,18],[18,24.6],[15.4,24.6]]], [4, [[16.2,24.6],[16.2,26.4]], true], [4, [[17.2,24.6],[17.2,26.4]], true]] } }),
+  sn: figure({ // sniper: slim frame, tall antenna, long rail gun
+    chest: [[7.2,7.4],[12.8,7.4],[13.6,8.8],[12.6,12.8],[11.4,13.8],[8.6,13.8],[7.4,12.8],[6.4,8.8]], pack: [[8.4,8.4],[11.6,8.4],[11.6,12.4],[8.4,12.4]],
+    waist: [[8.4,13.8],[11.6,13.8],[12,17],[8,17]], skirt: [[7.8,16.2],[12.2,16.2],[11.8,19.4],[8.2,19.4]],
+    head: [[9,3.2],[11,3.2],[11.6,4.2],[11.6,6],[10.8,6.8],[9.2,6.8],[8.4,6],[8.4,4.2]], fin: [[7.6,0],[10,3.8],[12.4,0]],
+    pauldron: [[3,7.2],[6.4,7.2],[6.8,8.6],[6.2,10],[2.8,10],[2.4,8.6]], arm: [[3.2,10],[5.6,10],[5.8,15],[5.4,17.4],[3.4,17.4],[3,15]],
+    hand: [[3.4,17.4],[5.4,17.4],[5.2,18.8],[3.6,18.8]],
+    thigh: [[7,17.4],[9.6,17.4],[9.4,22],[7.2,22]], shin: [[6.8,22.2],[9.8,22.2],[10,28.8],[9.4,31.4],[7.2,31.4],[6.6,28.8]], foot: [[6.6,31.6],[10,31.6],[10.4,33.6],[6.2,33.6]],
+    extra: { back: [[-1, [[8.6,9],[5.4,5.6],[6.2,9.8],[8.4,11]]], [-1, mir([[8.6,9],[5.4,5.6],[6.2,9.8],[8.4,11]])],
+        [-1, [[12.4,11.6],[13.4,12.4],[19.6,0.8],[18.8,0.2]]]],
+      frame: [[3, [[10,3.2],[10,1.2]], true]] } })
+};
 function drawDamage(c, x0, y0, s) {
-  // pilot's own mech seen from behind: [part index, x, y, w, h] on a 20x34 grid
-  const parts = [[-1, 6, 7, 8, 11], [3, 7.5, 1, 5, 5], [2, 1, 7, 4, 11], [4, 15, 7, 4, 11], [0, 5.5, 19, 4, 14], [1, 10.5, 19, 4, 14]];
   const k = 1.15 * s;
-  c.lineWidth = s;
-  for (const [pi, x, y, w, h] of parts) {
+  c.lineWidth = s; c.lineJoin = 'round';
+  for (const [pi, P, open] of FIGURES[game.key] || FIGURES.zx) {
     const bad = pi >= 0 && brokenPart(pi);
-    c.strokeStyle = bad ? BANDC.near : DIM;
+    c.beginPath(); P.forEach(([x, y], i) => c[i ? 'lineTo' : 'moveTo'](x0 + x * k, y0 + y * k));
+    if (!open) {
+      c.closePath();
+      c.fillStyle = bad ? 'rgba(0,0,0,.6)' : pi >= 0 ? 'rgba(20,70,38,.95)' : 'rgba(10,40,22,.95)'; c.fill();
+    }
+    c.strokeStyle = bad ? BANDC.near : pi >= 0 ? PHOS : DIM;
     c.setLineDash(bad ? [2 * s, 2 * s] : []);
-    c.strokeRect(x0 + x * k, y0 + y * k, w * k, h * k);
-    if (!bad && pi >= 0) { c.fillStyle = 'rgba(61,255,122,.18)'; c.fillRect(x0 + x * k, y0 + y * k, w * k, h * k); }
+    c.stroke();
   }
   c.setLineDash([]);
 }
