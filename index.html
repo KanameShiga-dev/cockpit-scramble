@@ -419,28 +419,23 @@ function modelFortress() { // FX-9: ring fortress with core hangars and four tur
   return m;
 }
 
-// Own-machine blueprints (img/unit-*.webp, three-view line art). Each view is cut out and its dark
-// background keyed to transparent when loaded. Until then, or if loading fails (e.g. opened from file://),
-// the vector damage figure and a text label are used instead.
+// Own-machine blueprints (img/unit-*.png): three-view line art, pre-keyed to transparency and reduced
+// to one hue x 8 levels. Each sheet holds front / side / back side by side as [x, width] at 320 px tall.
+// Until loaded, or if loading fails, the vector damage figure and a text label are used instead.
 const UNIT_ART = {
-  zx: { src: 'img/unit-zx.webp', front: [40, 155, 480, 690], side: [540, 160, 350, 685], back: [960, 155, 460, 690] },
-  sn: { src: 'img/unit-sn.webp', front: [30, 110, 480, 800], side: [520, 110, 360, 800], back: [940, 110, 470, 800] },
-  hv: { src: 'img/unit-hv.webp', front: [40, 135, 500, 780], side: [550, 105, 385, 810], back: [1015, 135, 490, 780] }
+  zx: { src: 'img/unit-zx.png', front: [0, 205], side: [207, 152], back: [361, 201] },
+  sn: { src: 'img/unit-sn.png', front: [0, 192], side: [194, 144], back: [340, 188] },
+  hv: { src: 'img/unit-hv.png', front: [0, 223], side: [225, 164], back: [391, 213] }
 };
 const unitArt = {};
-function keyOut(im, [sx, sy, sw, sh], H = 360) {
-  const c = document.createElement('canvas'), w = Math.round(H * sw / sh);
-  c.width = w; c.height = H;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  g.drawImage(im, sx, sy, sw, sh, 0, 0, w, H);
-  const d = g.getImageData(0, 0, w, H), p = d.data;
-  for (let i = 0; i < p.length; i += 4) p[i + 3] = clamp((Math.max(p[i], p[i + 1], p[i + 2]) - 80) * 2.2, 0, 255);
-  g.putImageData(d, 0, 0);
+function cutView(im, [x, w]) {
+  const c = document.createElement('canvas'); c.width = w; c.height = im.height;
+  c.getContext('2d').drawImage(im, x, 0, w, im.height, 0, 0, w, im.height);
   return c;
 }
 for (const [k, A] of Object.entries(UNIT_ART)) {
   const im = new Image();
-  im.onload = () => { try { unitArt[k] = { front: keyOut(im, A.front), side: keyOut(im, A.side), back: keyOut(im, A.back) }; } catch (e) {} };
+  im.onload = () => { unitArt[k] = { front: cutView(im, A.front), side: cutView(im, A.side), back: cutView(im, A.back) }; };
   im.src = A.src;
 }
 
