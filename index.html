@@ -86,6 +86,16 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
 .opt input[aria-invalid="true"]{border-color:var(--near)}
 #boot p.note{margin:-8px 0 14px;font-size:11.5px}
 #boot p.note[data-err]{color:var(--near)}
+/* landscape: console docked on the right, main view uses the rest (kept in sync with SIDE_MQ in script) */
+@media (orientation:landscape) and (min-aspect-ratio:4/3){
+  #console{left:auto;top:0;right:0;bottom:0;height:auto;width:calc(clamp(260px,34vw,380px) + env(safe-area-inset-right,0px));
+    padding:calc(10px + env(safe-area-inset-top,0px)) calc(10px + env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) 22px}
+  .screens{flex-direction:column}
+  #radarBox{flex:0 0 auto;height:min(40%,260px);max-width:100%;align-self:center}
+  #monBox{flex:1;min-height:90px}
+  #msg{display:block}
+  .ctrls button{font-size:11px;padding:6px 1px;white-space:nowrap}
+}
 #bBoot{width:100%;padding:12px;font-size:15px;font-weight:600;background:var(--phos);color:#001a08;border-color:var(--phos)}
 </style>
 </head>
@@ -96,7 +106,7 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
 <div id="probe"></div>
 
 <section id="console" aria-label="コンソール">
-  <svg class="frame" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="8,0 92,0 100,100 0,100"/></svg>
+  <svg class="frame" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="framePoly" points="8,0 92,0 100,100 0,100"/></svg>
   <div class="screens">
     <div class="scr" id="radarBox"><canvas id="radar" aria-label="レーダーと損傷表示"></canvas></div>
     <div class="scr" id="monBox"><canvas id="mon" aria-label="目標モニター"></canvas></div>
@@ -491,11 +501,18 @@ const monCv = $('#mon'), mctx = monCv.getContext('2d');
 const proc = document.createElement('canvas'), pctx = proc.getContext('2d', { willReadFrequently: true });
 const wire = document.createElement('canvas'), wctx = wire.getContext('2d');
 let W = 0, H = 0, DPR = 1, safeTop = 0, wireImg, gray, mag;
-const viewH = () => Math.max(100, H - consoleEl.offsetHeight);
+const SIDE_MQ = matchMedia('(orientation:landscape) and (min-aspect-ratio:4/3)'); // same query as the CSS
+let consoleBottom = 0; // height the console takes from the bottom of the main view (0 when docked right)
+const viewH = () => Math.max(100, H - consoleBottom);
 function fitCanvas(cv) { const r = cv.getBoundingClientRect(); cv.width = Math.max(1, Math.round(r.width * DPR)); cv.height = Math.max(1, Math.round(r.height * DPR)); }
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, innerWidth); H = Math.max(1, innerHeight); // 0 while the page is hidden during load
+  const side = SIDE_MQ.matches;
+  // main view: full width with the console below, or the area left of the docked console
+  W = Math.max(1, innerWidth - (side ? consoleEl.offsetWidth : 0)); H = Math.max(1, innerHeight); // 0 while the page is hidden during load
+  consoleBottom = side ? 0 : consoleEl.offsetHeight;
+  hud.style.width = video.style.width = W + 'px';
+  $('#framePoly').setAttribute('points', side ? '10,0 100,0 100,100 0,100' : '8,0 92,0 100,100 0,100');
   hud.width = Math.round(W * DPR); hud.height = Math.round(H * DPR);
   safeTop = probe.offsetHeight;
   const pw = 160, ph = clamp(Math.round(pw * viewH() / W), 60, 400);
@@ -506,6 +523,7 @@ function resize() {
 }
 addEventListener('resize', resize);
 new ResizeObserver(resize).observe(consoleEl);
+if (SIDE_MQ.addEventListener) SIDE_MQ.addEventListener('change', resize);
 resize();
 
 // ================= orientation =================
@@ -1059,7 +1077,7 @@ function canopyPath(yb, t, side) {
   ctx.lineTo(0.92 * W, yb); ctx.closePath();
 }
 function drawCanopy() {
-  const yb = H - consoleEl.offsetHeight + 2, t = safeTop + 6, side = Math.max(0.2 * H, t + 70);
+  const yb = H - consoleBottom + 2, t = safeTop + 6, side = Math.max(0.2 * H, t + 70);
   ctx.beginPath(); ctx.rect(0, 0, W, H); canopyPath(yb, t, side);
   ctx.fillStyle = 'rgba(0,8,3,.55)'; ctx.fill('evenodd');
   ctx.beginPath(); canopyPath(yb, t, side);
@@ -1598,7 +1616,7 @@ let lastT = 0;
 function frame(t) {
   const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0); lastT = t; nowS = t / 1000;
   cx = W / 2; cy = viewH() / 2; F = (Math.max(W, H) / 2) / Math.tan(33 * D);
-  top = safeTop + 64; bottom = H - consoleEl.offsetHeight - 8;
+  top = safeTop + 64; bottom = H - consoleBottom - 8;
   if (game.state === 'idle' && !reduceMotion) manYaw = (manYaw + 0.04) % 360;
   if (gotSensor && !manual) smooth(sensorView(), 0.3); else smooth(basisFrom(manYaw, manPitch, 0), 0.25);
   update(dt);
