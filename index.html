@@ -78,6 +78,11 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
 .opt .segs{display:flex;flex:1}
 .opt .segs button{flex:1;padding:6px 0;font-size:12.5px}
 .opt .segs button+button{border-left:none}
+.opt input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--phos);background:transparent;border:1px solid var(--phos-dim);padding:6px 8px}
+.opt input:focus-visible{outline:2px solid var(--phos);outline-offset:1px}
+.opt input[aria-invalid="true"]{border-color:var(--near)}
+#boot p.note{margin:-8px 0 14px;font-size:11.5px}
+#boot p.note[data-err]{color:var(--near)}
 #bBoot{width:100%;padding:12px;font-size:15px;font-weight:600;background:var(--phos);color:#001a08;border-color:var(--phos)}
 </style>
 </head>
@@ -116,6 +121,9 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
     <div class="machines" role="radiogroup" aria-label="機体" id="machines"></div>
     <div class="opt"><span class="lbl">旋回感度</span>
       <div class="segs" role="radiogroup" aria-label="旋回感度" id="gains"></div></div>
+    <div class="opt"><label class="lbl" for="pilot">パイロット名</label>
+      <input id="pilot" maxlength="12" autocomplete="nickname" spellcheck="false" placeholder="例：KANAME" aria-describedby="pilotMsg"></div>
+    <p id="pilotMsg" class="note">出撃シーンに表示されます（12文字まで）。この端末に保存され、次回も使えます。</p>
     <button id="bBoot">出撃</button>
   </div>
 </div>
@@ -182,6 +190,8 @@ const SFX = (() => {
     clear() { if (ok('clr', 500)) [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.2, 'square', 0.1, i * 0.12)); },
     // launch sequence
     boot() { if (ok('boot', 500)) { tone(220, 440, 0.3, 'sine', 0.08); tone(660, 660, 0.08, 'square', 0.06, 0.35); } },
+    tick() { if (ok('tick', 60)) tone(1600, 1600, 0.04, 'square', 0.06); },
+    green() { if (ok('green', 500)) [784, 1175].forEach((f, i) => tone(f, f, 0.16, 'square', 0.09, i * 0.1)); },
     count(i) { if (ok('count' + i, 300)) i < 2 ? tone(880, 880, 0.14, 'square', 0.12) : tone(1320, 1320, 0.45, 'square', 0.14); },
     catapult() { if (ok('cat', 1000)) { noise(0.35, 0.7, 'lowpass', 2000, 60); tone(120, 40, 0.5, 'sawtooth', 0.25);
       noise(2.2, 0.45, 'bandpass', 300, 3200, 0.1); tone(90, 260, 2.0, 'sawtooth', 0.08, 0.1); } },
@@ -409,21 +419,84 @@ function modelFortress() { // FX-9: ring fortress with core hangars and four tur
   return m;
 }
 
+// Player machines (shown in the pre-launch check): V-fin, twin eyes, chest vents, blocky shoulders.
+// o: leg spacing, limb thickness, torso width, shoulder x, fin size
+function modelPilot(k) {
+  const m = mdl();
+  const o = { zx: { lx: 1.7, l: 1, tw: 1, sx: 4.6, fin: 1 }, hv: { lx: 2.0, l: 1.25, tw: 1.2, sx: 5.2, fin: 0.55 }, sn: { lx: 1.5, l: 0.85, tw: 0.88, sx: 4.2, fin: 1.35 } }[k];
+  both(s => {
+    const x = s * o.lx, L = o.l;
+    pod(m, 'z', [x, 0.7, -1.3], [x, 0.6, 2.4], 1.9 * L, 1.4, 1.4 * L, 0.9);          // foot
+    pod(m, 'y', [x, 0.9, 0.1], [x, 7.2, 0.1], 2.0 * L, 2.3, 1.6 * L, 1.9);           // shin
+    Zb(m, x, 7.4, 0.4, 1.8, 1.4 * L, 1.5, 1.0 * L, 1.0, 0.3);                        // knee armor
+    pod(m, 'y', [x, 7.0, 0], [x, 10.6, 0], 1.6 * L, 1.8, 1.9 * L, 2.0);              // thigh
+    Vb(m, s * (o.lx + 1.1) * o.tw, 0, 9.4, 11.2, 0.5, 2.4, 0.5, 2.8, 0.3);           // side skirt
+    Vb(m, s * 1.05, 1.5, 9.2, 11.0, 1.8, 0.4, 2.0, 0.5, 0.3);                        // front skirt
+    Vb(m, s * o.sx, 0, 13.4, 16.0, 2.6 * L, 2.8, 2.8 * L, 3.0, 0.3);                 // shoulder block
+    pod(m, 'y', [s * o.sx, 13.5, 0], [s * o.sx, 11.2, 0], 1.2 * L, 1.2);              // upper arm
+    pod(m, 'y', [s * (o.sx + 0.1), 11.3, 0.2], [s * (o.sx + 0.1), 8.2, 0.3], 1.6 * L, 1.7, 1.8 * L, 1.9); // forearm
+    pod(m, 'y', [s * (o.sx + 0.1), 8.3, 0.35], [s * (o.sx + 0.1), 7.1, 0.4], 1.1 * L, 1.2); // hand
+    Zb(m, s * 1.25 * o.tw, 14.3, 1.45, 1.85, 1.0, 0.9, 0.9, 0.8, 0.2);               // chest vent
+    for (const y of [14.05, 14.3, 14.55]) seg(m, [s * 0.85 * o.tw, y, 1.87], [s * 1.65 * o.tw, y, 1.87]);
+    hull(m, [rr('z', [s * 0.25, 18.1, 1.0], 0.3, 0.3), rr('z', [s * 1.6 * o.fin, 18.1 + 1.5 * o.fin, 0.75], 0.07, 0.07)]); // V-fin
+    seg(m, [s * 0.25, 17.35, 1.08], [s * 0.7, 17.45, 0.95]);                          // twin eye
+  });
+  pod(m, 'y', [0, 10.8, 0.2], [0, 8.8, 0.3], 2.6, 2.4, 1.4, 1.8);                   // crotch
+  Ve(m, 0, 0, [[10.2, 3.0 * o.tw, 2.2], [11.4, 3.2 * o.tw, 2.3]]);                    // waist
+  Ve(m, 0, 0, [[11.3, 3.2 * o.tw, 2.4], [12.6, 4.2 * o.tw, 2.9], [14.0, 5.6 * o.tw, 3.4], [15.2, 5.4 * o.tw, 3.2], [16.0, 3.6 * o.tw, 2.4]], 12); // torso
+  Zb(m, 0, 13.0, 1.2, 1.7, 1.2, 1.0, 1.0, 0.8, 0.3);                                 // cockpit hatch
+  pod(m, 'y', [0, 15.8, 0], [0, 16.5, 0], 1.1, 1.1);                                 // neck
+  Ve(m, 0, 0.1, [[16.3, 1.5, 1.6], [16.8, 1.9, 2.0], [17.8, 1.9, 2.0], [18.3, 1.2, 1.3]], 12); // head
+  Zb(m, 0, 16.85, 0.9, 1.2, 0.9, 0.7, 0.6, 0.45, 0.3);                               // face mask
+  hull(m, [rr('z', [0, 18.1, 0.9], 0.45, 0.4, 0.3), rr('z', [0, 18.1, 1.25], 0.3, 0.3, 0.3)]); // forehead crest
+  Vb(m, 0, -2.2, 12.4, 15.8, 3.6 * o.tw, 1.8, 3.2 * o.tw, 1.6, 0.3);               // backpack
+  both(s => pod(m, 'y', [s * 0.9, 12.6, -3.2], [s * 0.9, 11.4, -3.2], 0.8, 0.8, 1.1, 1.1, 8, [[0, 0.6], [1, 1]])); // thrusters
+  if (k === 'zx') {
+    const sh = [[-5.9, 12.2], [-3.7, 12.2], [-3.7, 7.4], [-4.8, 5.6], [-5.9, 7.4]];
+    hull(m, [sh.map(([u, v]) => [u, v, 1.5]), sh.map(([u, v]) => [u, v, 1.8])]);   // shield
+    seg(m, [-4.8, 11.6, 1.85], [-4.8, 6.4, 1.85]);
+    pod(m, 'z', [4.7, 7.6, -1.0], [4.7, 7.6, 3.0], 0.8, 1.3, 0.8, 1.1);            // rifle body
+    pod(m, 'z', [4.7, 7.8, 3.0], [4.7, 7.8, 5.8], 0.35, 0.35, 0.35, 0.35, 6, TUBE); // barrel
+    pod(m, 'z', [4.7, 8.6, 0.2], [4.7, 8.6, 1.8], 0.45, 0.45);                      // scope
+    both(s => { const W = [[1.6, 15.2], [7.2, 19.2], [6.2, 15.6], [3.2, 12.6]].map(([u, v]) => [s * u, v]);
+      hull(m, [W.map(([u, v]) => [u, v, -2.6]), W.map(([u, v]) => [u, v, -2.8])]);  // wing binder
+      seg(m, [W[0][0], W[0][1], -2.55], [W[1][0] * 0.95, W[1][1] - 0.6, -2.55]); });
+  } else if (k === 'hv') {
+    both(s => {
+      pod(m, 'z', [s * 2.3, 17.6, -3.2], [s * 2.3, 17.6, 0.4], 1.6, 1.6, 1.4, 1.4, 10); // cannon breech
+      pod(m, 'z', [s * 2.3, 17.6, 0.4], [s * 2.3, 17.6, 5.0], 0.8, 0.8, 0.7, 0.7, 8, TUBE); // cannon barrel
+    });
+    pod(m, 'z', [5.3, 7.6, -0.6], [5.3, 7.6, 3.4], 1.4, 1.4, 1.3, 1.3, 10);         // gatling housing
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; seg(m, [5.3 + Math.cos(a) * 0.4, 7.6 + Math.sin(a) * 0.4, 3.4], [5.3 + Math.cos(a) * 0.4, 7.6 + Math.sin(a) * 0.4, 5.2]); }
+  } else {
+    pod(m, 'z', [2.8, 17.2, -3.4], [2.8, 17.2, 0.6], 1.0, 1.1, 0.9, 1.0, 8);        // rail gun body
+    pod(m, 'z', [2.8, 17.3, 0.6], [2.8, 17.3, 8.0], 0.45, 0.45, 0.4, 0.4, 6, TUBE);  // rail
+    pod(m, 'z', [2.8, 18.0, -1.6], [2.8, 18.0, 0.4], 0.4, 0.4);                      // scope
+    both(s => { const W = [[1.2, 14.6], [4.6, 17.4], [4.0, 14.8], [2.2, 12.8]].map(([u, v]) => [s * u, v]);
+      hull(m, [W.map(([u, v]) => [u, v, -2.6]), W.map(([u, v]) => [u, v, -2.75])]); }); // sensor fins
+  }
+  return m;
+}
+const PILOT_MODELS = Object.fromEntries(['zx', 'hv', 'sn'].map(k => {
+  const M = modelPilot(k);
+  return [k, { M, yc: 9.5, rad: Math.max(...M.v.map(v => Math.hypot(v[0], v[1] - 9.5, v[2]))) }];
+}));
+
 // ================= data =================
 const VULCAN = { name: 'バルカン', dmg: 4, cd: 0.14, fx: 'bullet', en: 0 };
 const MACHINES = {
-  zx: { name: 'ZX-01 エアロウィング', desc: '可変の万能機。どの距離でも戦える。', armor: 100, lockMax: 3,
-    near: { name: 'ビームサーベル', dmg: 60, cd: 0.9, fx: 'slash', en: 0 },
-    mid:  { name: 'ビームライフル', dmg: 26, cd: 0.7, fx: 'beam', en: 8 },
-    far:  { name: 'ロングビームキャノン', dmg: 55, cd: 2.6, fx: 'cannon', en: 26 } },
-  hv: { name: 'HV-02 バスティオン', desc: '重装甲の砲撃機。多数を同時に捕捉、格闘は鈍重。', armor: 160, lockMax: 4,
-    near: { name: 'ヒートアックス', dmg: 70, cd: 1.6, fx: 'slash', en: 0 },
-    mid:  { name: 'ガトリング', dmg: 9, cd: 0.16, fx: 'bullet', en: 1.6 },
-    far:  { name: 'ツインキャノン', dmg: 85, cd: 3.2, fx: 'cannon', en: 30 } },
-  sn: { name: 'SN-03 ニードル', desc: '装甲は薄いが、単一目標を遠くから確実に落とす。', armor: 70, lockMax: 1,
-    near: { name: 'ビームナイフ', dmg: 38, cd: 0.45, fx: 'slash', en: 0 },
-    mid:  { name: 'ビームSMG', dmg: 12, cd: 0.22, fx: 'bullet', en: 2.5 },
-    far:  { name: 'ロングレールガン', dmg: 95, cd: 2.1, fx: 'rail', en: 24 } }
+  zx: { name: 'ZX-01 エアロウィング', call: 'AEROWING', desc: '可変の万能機。どの距離でも戦える。', armor: 100, lockMax: 3,
+    near: { name: 'ビームサーベル', label: 'BEAM SABER', dmg: 60, cd: 0.9, fx: 'slash', en: 0 },
+    mid:  { name: 'ビームライフル', label: 'BEAM RIFLE', dmg: 26, cd: 0.7, fx: 'beam', en: 8 },
+    far:  { name: 'ロングビームキャノン', label: 'LONG BEAM CANNON', dmg: 55, cd: 2.6, fx: 'cannon', en: 26 } },
+  hv: { name: 'HV-02 バスティオン', call: 'BASTION', desc: '重装甲の砲撃機。多数を同時に捕捉、格闘は鈍重。', armor: 160, lockMax: 4,
+    near: { name: 'ヒートアックス', label: 'HEAT AXE', dmg: 70, cd: 1.6, fx: 'slash', en: 0 },
+    mid:  { name: 'ガトリング', label: 'GATLING GUN', dmg: 9, cd: 0.16, fx: 'bullet', en: 1.6 },
+    far:  { name: 'ツインキャノン', label: 'TWIN CANNON', dmg: 85, cd: 3.2, fx: 'cannon', en: 30 } },
+  sn: { name: 'SN-03 ニードル', call: 'NEEDLE', desc: '装甲は薄いが、単一目標を遠くから確実に落とす。', armor: 70, lockMax: 1,
+    near: { name: 'ビームナイフ', label: 'BEAM KNIFE', dmg: 38, cd: 0.45, fx: 'slash', en: 0 },
+    mid:  { name: 'ビームSMG', label: 'BEAM SMG', dmg: 12, cd: 0.22, fx: 'bullet', en: 2.5 },
+    far:  { name: 'ロングレールガン', label: 'LONG RAIL GUN', dmg: 95, cd: 2.1, fx: 'rail', en: 24 } }
 };
 const ENEMY = {
   garm:  { name: 'GR-7 ガルム', role: '量産型', size: '全高 18.2 m', weapon: 'マシンガン', hp: 60, speed: 1, dmg: 5, fireCd: 2.6, range: 800, prefers: 'mid', score: 100, model: modelGrunt(), yc: 9, scale: 1.5 },
@@ -451,10 +524,10 @@ const viewH = () => Math.max(100, H - consoleEl.offsetHeight);
 function fitCanvas(cv) { const r = cv.getBoundingClientRect(); cv.width = Math.max(1, Math.round(r.width * DPR)); cv.height = Math.max(1, Math.round(r.height * DPR)); }
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = innerWidth; H = innerHeight;
+  W = Math.max(1, innerWidth); H = Math.max(1, innerHeight); // 0 while the page is hidden during load
   hud.width = Math.round(W * DPR); hud.height = Math.round(H * DPR);
   safeTop = probe.offsetHeight;
-  const pw = 160, ph = Math.max(60, Math.round(pw * viewH() / W));
+  const pw = 160, ph = clamp(Math.round(pw * viewH() / W), 60, 400);
   proc.width = wire.width = pw; proc.height = wire.height = ph;
   wireImg = wctx.createImageData(pw, ph); gray = new Float32Array(pw * ph); mag = new Float32Array(pw * ph);
   fitCanvas(radarCv); fitCanvas(monCv);
@@ -867,6 +940,17 @@ function drawModel(c, M, pts, visible, bias) {
     } else { c.moveTo(pts[it[0]][0], pts[it[0]][1]); c.lineTo(pts[it[1]][0], pts[it[1]][1]); c.stroke(); }
   }
 }
+// turntable view for monitors: model spun by yaw, tilted slightly, mild perspective; pts are [x, y, depth]
+function spinProject(M, yc, rad, mcx, mcy, sc, yaw, tilt = 0.25) {
+  const cyw = Math.cos(yaw), syw = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt), eye = -rad * 8;
+  const rot = ([x, y, z], oy) => {
+    const X = x * cyw + z * syw, Z = -x * syw + z * cyw, Y = y - oy;
+    return [X, Y * ct - Z * st, Y * st + Z * ct];
+  };
+  const pts = M.v.map(v => { const [X, Y2, Z2] = rot(v, yc), p = 1 / (1 + Z2 / (rad * 8)); return [mcx + X * sc * p, mcy - Y2 * sc * p, Z2]; });
+  const vis = f => { const n = rot(f.n, 0), q = rot(f.c, yc); return n[0] * q[0] + n[1] * q[1] + n[2] * (q[2] - eye) < 0; };
+  return { pts, vis };
+}
 function drawEnemies() {
   for (const e of game.enemies) {
     const fr = enemyFrame(e), T = e.T;
@@ -1193,17 +1277,7 @@ function drawMonitor() {
   const areaH = h - textH;
   const mcx = mw / 2, mcy = textH + areaH / 2;
   const sc = Math.min(areaH * 0.42 / T.rad, mw * 0.42 / T.rad);
-  const yaw = nowS * 0.8, cyw = Math.cos(yaw), syw = Math.sin(yaw), tilt = 0.25, ct = Math.cos(tilt), st = Math.sin(tilt);
-  const rot = ([x, y, z], oy) => {
-    const X = x * cyw + z * syw, Z = -x * syw + z * cyw, Y = y - oy;
-    return [X, Y * ct - Z * st, Y * st + Z * ct];
-  };
-  const eye = -T.rad * 8;
-  const pts = M.v.map(v => {
-    const [X, Y2, Z2] = rot(v, T.yc), p = 1 / (1 + Z2 / (T.rad * 8));
-    return [mcx + X * sc * p, mcy - Y2 * sc * p, Z2];
-  });
-  const vis = f => { const n = rot(f.n, 0), q = rot(f.c, T.yc); return n[0] * q[0] + n[1] * q[1] + n[2] * (q[2] - eye) < 0; };
+  const { pts, vis } = spinProject(M, T.yc, T.rad, mcx, mcy, sc, nowS * 0.8);
   c.globalAlpha = 1; c.strokeStyle = '#c9ffd9'; c.lineWidth = 0.9 * s; c.lineJoin = 'round';
   drawModel(c, M, pts, vis, T.rad * 0.04);
   if (brokenPart(3)) { // head sensor lost: noisy monitor
@@ -1287,15 +1361,19 @@ function processWire() {
 }
 
 // ================= launch sequence =================
-// Model number on the front monitor → STANDBY / SET / LAUNCH → catapult run through the deck tunnel → exit flash.
-const LAUNCH = { count: [1.6, 2.6, 3.6], go: 4.4, exit: 6.4, end: 7.0 };
-const LAUNCH_CUES = [[0.15, () => SFX.boot()], [1.6, () => SFX.count(0)], [2.6, () => SFX.count(1)], [3.6, () => SFX.count(2)],
-  [4.4, () => { SFX.catapult(); game.shake = 0.9; }], [6.4, () => SFX.exit()]];
+// Front monitor: machine check (wireframe scan, armament, condition) → model number / name / pilot
+// → STANDBY / SET / LAUNCH → catapult run through the deck tunnel → exit flash.
+const LAUNCH = { id: 4.4, count: [5.8, 6.8, 7.8], go: 8.6, exit: 10.6, end: 11.2 };
+const CHECKS = ['ARMOR', 'GENERATOR', 'THRUSTER', 'FCS', 'SENSOR'], CHECK_T0 = 1.6, CHECK_DT = 0.4, GREEN_T = 3.7;
+const LAUNCH_CUES = [[0.15, () => SFX.boot()], [0.6, () => SFX.tick()], [0.9, () => SFX.tick()], [1.2, () => SFX.tick()],
+  ...CHECKS.map((_, i) => [CHECK_T0 + i * CHECK_DT + 0.3, () => SFX.tick()]), [GREEN_T, () => SFX.green()], [LAUNCH.id, () => SFX.boot()],
+  [LAUNCH.count[0], () => SFX.count(0)], [LAUNCH.count[1], () => SFX.count(1)], [LAUNCH.count[2], () => SFX.count(2)],
+  [LAUNCH.go, () => { SFX.catapult(); game.shake = 0.9; }], [LAUNCH.exit, () => SFX.exit()]];
 const LAMPS = [['STANDBY', '#ff4d4d'], ['SET', '#ffc94d'], ['LAUNCH', '#3dff7a']];
 function startLaunch() {
   game.m = MACHINES[game.key];
   Object.assign(game, { state: 'launch', stageIdx: 0, enemies: [], fx: [], selected: null, locks: [], launch: { t: 0, cue: 0 } });
-  say(`${game.m.name} 発進シークエンス。画面タップでスキップできます。`);
+  say(`${game.m.name}（${game.pilot}）発進シークエンス。画面タップでスキップできます。`);
 }
 function skipLaunch() {
   const L = game.launch;
@@ -1361,7 +1439,7 @@ function drawLaunch() {
   if (t >= LAUNCH.exit) { ctx.fillStyle = `rgba(220,255,232,${Math.min(0.9, (t - LAUNCH.exit) / 0.6 * 0.9).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
 }
 function drawLaunchPanel() {
-  const t = game.launch.t;
+  const t = game.launch.t, checking = t < LAUNCH.id;
   ctx.save();
   if (t >= LAUNCH.go && !reduceMotion) { // speed / G readout during the run
     const sp = 60 * (t - LAUNCH.go) * 3.6;
@@ -1370,27 +1448,78 @@ function drawLaunchPanel() {
   }
   const al = t < 0.3 ? t / 0.3 : t > LAUNCH.go ? Math.max(0, 1 - (t - LAUNCH.go) / 0.7) : 1;
   if (al <= 0) { ctx.restore(); return; }
-  const w = Math.min(W - 48, 320), h = 176, x = (W - w) / 2, y = Math.max(safeTop + 40, cy - h - viewH() * 0.02);
+  const w = Math.min(W - 40, checking ? 348 : 320), h = checking ? 206 : 184, x = (W - w) / 2, y = Math.max(safeTop + 40, cy - h - viewH() * 0.02);
   ctx.globalAlpha = al;
-  ctx.fillStyle = 'rgba(0,22,10,.7)'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,22,10,.72)'; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = 'rgba(61,255,122,.05)'; for (let yy = y + 2; yy < y + h; yy += 3) ctx.fillRect(x, yy, w, 1); // scanlines
   ctx.strokeStyle = PHOS; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h);
   ctx.lineWidth = 3; for (const [px, py, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
     ctx.beginPath(); ctx.moveTo(px + dx * 16, py); ctx.lineTo(px, py); ctx.lineTo(px, py + dy * 16); ctx.stroke(); }
   ctx.textBaseline = 'top'; ctx.fillStyle = DIM; ctx.font = `600 10px ${FONT}`;
-  ctx.textAlign = 'left'; ctx.fillText('MOBILE UNIT  LAUNCH SEQUENCE', x + 12, y + 10);
+  ctx.textAlign = 'left'; ctx.fillText(checking ? 'PRE-LAUNCH CHECK' : 'MOBILE UNIT  LAUNCH SEQUENCE', x + 12, y + 10);
   ctx.textAlign = 'right'; ctx.fillText('CATAPULT No.1', x + w - 12, y + 10);
-  // model number typed in, then name and status
-  const [code, ...rest] = game.m.name.split(' '), shown = code.slice(0, Math.floor(Math.max(0, t - 0.2) / 0.08));
-  ctx.textAlign = 'center'; ctx.fillStyle = '#c9ffd9'; ctx.font = `600 44px ${FONT}`;
-  ctx.shadowColor = PHOS; ctx.shadowBlur = 14; ctx.fillText(shown, x + w / 2, y + 28); ctx.shadowBlur = 0;
-  if (t > 0.8) { ctx.font = `600 15px ${FONT}`; ctx.fillStyle = PHOS; ctx.fillText(rest.join(' '), x + w / 2, y + 74); }
-  if (t > 1.1) { ctx.font = `400 11px ${FONT}`; ctx.fillStyle = DIM; ctx.fillText(`ARMOR ${game.m.armor}  LOCK ${game.m.lockMax}  ALL SYSTEMS GREEN`, x + w / 2, y + 94); }
-  // countdown seen through the monitor
+  const code = game.m.name.split(' ')[0];
+  if (checking) drawCheckView(t, x, y, w, h, code);
+  else drawIdView(t, x, y, w, h, code);
+  ctx.restore();
+  if (t < LAUNCH.go) { // skip hint under the monitor
+    ctx.save(); ctx.font = `400 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = DIM;
+    ctx.fillText('タップでスキップ', cx, y + h + 8); ctx.restore();
+  }
+}
+// left: own machine as a spinning wireframe, a scan line turns it solid; right: armament and condition lists
+function drawCheckView(t, x, y, w, h, code) {
+  const PM = PILOT_MODELS[game.key], mw = w * 0.4, mx = x + 8, my = y + 26, mh = h - 34;
+  const sc = Math.min(mh * 0.46, mw * 0.46) / PM.rad, scanY = my + mh * Math.min(1, Math.max(0, (t - 0.3) / 1.5));
+  ctx.strokeStyle = 'rgba(61,255,122,.25)'; ctx.lineWidth = 1; ctx.strokeRect(mx, my, mw, mh);
+  const { pts, vis } = spinProject(PM.M, PM.yc, PM.rad, mx + mw / 2, my + mh / 2 + 4, sc, t * 0.9 + 0.6);
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  ctx.strokeStyle = 'rgba(61,255,122,.35)'; ctx.lineWidth = 0.6; ctx.beginPath();
+  for (const [a, b] of PM.M.e) { ctx.moveTo(pts[a][0], pts[a][1]); ctx.lineTo(pts[b][0], pts[b][1]); }
+  ctx.stroke();
+  ctx.beginPath(); ctx.rect(mx, my, mw, scanY - my); ctx.clip();
+  ctx.strokeStyle = '#c9ffd9'; ctx.lineWidth = 0.9; ctx.lineJoin = 'round';
+  drawModel(ctx, PM.M, pts, vis, PM.rad * 0.04);
+  ctx.restore();
+  if (t < 1.8) { ctx.fillStyle = PHOS; ctx.fillRect(mx, scanY - 1, mw, 2); }
+  ctx.fillStyle = PHOS; ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(code, mx + mw / 2, my + mh - 14);
+  // lists
+  const lx = mx + mw + 12, rx = x + w - 12; let ly = y + 28;
+  const row = (label, status, col, font = `400 10px ${FONT}`) => {
+    ctx.font = font; ctx.textAlign = 'left'; ctx.fillStyle = DIM; ctx.fillText(label, lx, ly);
+    ctx.textAlign = 'right'; ctx.fillStyle = col; ctx.fillText(status, rx, ly); ly += 14;
+  };
+  ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = PHOS; ctx.fillText('ARMAMENT', lx, ly); ly += 15;
+  [['near', 'N'], ['mid', 'M'], ['far', 'F']].forEach(([band], i) => {
+    if (t >= 0.6 + i * 0.3) row(game.m[band].label, 'SET', BANDC[band]); else ly += 14;
+  });
+  ly += 5; ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = PHOS; ctx.fillText('CONDITION', lx, ly); ly += 15;
+  CHECKS.forEach((name, i) => {
+    const t0 = CHECK_T0 + i * CHECK_DT;
+    if (t < t0) { ly += 14; return; }
+    const label = name === 'ARMOR' ? `ARMOR ${game.m.armor}` : name;
+    row(label, t < t0 + 0.3 ? '.'.repeat(1 + Math.floor((t - t0) / 0.1) % 3) : 'OK', t < t0 + 0.3 ? DIM : PHOS);
+  });
+  if (t >= GREEN_T && Math.sin(t * 14) > -0.4) {
+    ctx.font = `600 15px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = PHOS; ctx.shadowColor = PHOS; ctx.shadowBlur = 10;
+    ctx.fillText('ALL GREEN', (lx + rx) / 2, y + h - 24); ctx.shadowBlur = 0;
+  }
+}
+// model number, English name, pilot, then the countdown seen through the monitor
+function drawIdView(t, x, y, w, h, code) {
+  const u = t - LAUNCH.id, shown = code.slice(0, Math.floor(Math.max(0, u) / 0.08));
+  ctx.textAlign = 'center'; ctx.fillStyle = '#c9ffd9'; ctx.font = `600 42px ${FONT}`;
+  ctx.shadowColor = PHOS; ctx.shadowBlur = 14; ctx.fillText(shown, x + w / 2, y + 24); ctx.shadowBlur = 0;
+  if (u > 0.5) { ctx.font = `600 15px ${FONT}`; ctx.fillStyle = PHOS; ctx.fillText(game.m.call, x + w / 2, y + 70); }
+  if (u > 0.8) {
+    ctx.font = `400 10px ${FONT}`; ctx.fillStyle = DIM; ctx.textAlign = 'right'; ctx.fillText('PILOT', x + w / 2 - 6, y + 93);
+    ctx.font = `600 13px ${FONT}`; ctx.fillStyle = PHOS; ctx.textAlign = 'left'; ctx.fillText(game.pilot.toUpperCase(), x + w / 2 + 2, y + 91);
+  }
+  ctx.textAlign = 'center';
   const idx = LAUNCH.count.filter(c => t >= c).length - 1;
   if (idx >= 0 && (idx < 2 || Math.sin(t * 18) > -0.3)) {
     ctx.font = `600 28px ${FONT}`; ctx.fillStyle = LAMPS[idx][1]; ctx.shadowColor = LAMPS[idx][1]; ctx.shadowBlur = 12;
-    ctx.fillText(LAMPS[idx][0], x + w / 2, y + 112); ctx.shadowBlur = 0;
+    ctx.fillText(LAMPS[idx][0], x + w / 2, y + 116); ctx.shadowBlur = 0;
   }
   LAMPS.forEach(([name, col], i) => {
     const lx = x + w / 2 + (i - 1) * 70, ly = y + h - 14;
@@ -1399,11 +1528,6 @@ function drawLaunchPanel() {
     ctx.font = `600 9px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = i <= idx ? col : DIM; ctx.fillText(name, lx - 12, ly);
     ctx.textBaseline = 'top';
   });
-  ctx.restore();
-  if (t < LAUNCH.go) { // skip hint under the monitor
-    ctx.save(); ctx.font = `400 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = DIM;
-    ctx.fillText('タップでスキップ', cx, y + h + 8); ctx.restore();
-  }
 }
 
 // ================= loop =================
@@ -1544,7 +1668,19 @@ async function startCamera() {
   mirror = st.facingMode === 'user' || (!st.facingMode && !('ontouchstart' in window));
   video.style.transform = mirror ? 'scaleX(-1)' : '';
 }
+// pilot name: required, remembered on this device only
+const pilotEl = $('#pilot'), pilotMsg = $('#pilotMsg'), PILOT_KEY = 'cockpitScramble.pilot', pilotHelp = pilotMsg.textContent;
+try { pilotEl.value = localStorage.getItem(PILOT_KEY) || ''; } catch (e) {}
+pilotEl.addEventListener('input', () => { pilotEl.removeAttribute('aria-invalid'); pilotMsg.removeAttribute('data-err'); pilotMsg.textContent = pilotHelp; });
 $('#bBoot').addEventListener('click', async () => {
+  const pilot = pilotEl.value.replace(/\s+/g, ' ').trim().slice(0, 12);
+  if (!pilot) {
+    pilotEl.setAttribute('aria-invalid', 'true'); pilotMsg.setAttribute('data-err', '');
+    pilotMsg.textContent = 'パイロット名を入力してください。'; pilotEl.focus();
+    return;
+  }
+  game.pilot = pilot;
+  try { localStorage.setItem(PILOT_KEY, pilot); } catch (e) {}
   SFX.init();
   const sp = sensorsAsked ? null : requestSensors();
   sensorsAsked = true;
