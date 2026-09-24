@@ -49,6 +49,9 @@ body{margin:0;height:100%;overflow:hidden;background:var(--void);color:var(--pho
 #wpn{font-size:12px;min-height:1.3em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .ctrls{display:flex;gap:5px}
 .ctrls button{flex:1;padding:7px 2px;font-size:12px}
+.ctrls button[data-alert]{background:var(--near);border-color:var(--near);color:#fff;font-weight:600;animation:alert .5s steps(2) infinite}
+@keyframes alert{50%{background:#5a0f0f}}
+@media (prefers-reduced-motion:reduce){.ctrls button[data-alert]{animation:none}}
 button{font:inherit;font-size:13px;color:var(--phos);background:transparent;border:1px solid var(--phos-dim);padding:7px 12px;cursor:pointer}
 button:disabled{opacity:.35;cursor:default}
 button[aria-pressed="true"]{background:var(--phos);color:#001a08;font-weight:600}
@@ -105,8 +108,8 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
   </div>
   <div id="wpn">待機中</div>
   <div class="ctrls">
-    <button id="bIn" disabled>接近</button>
-    <button id="bOut" disabled>離脱</button>
+    <button id="bIn" disabled>回避</button>
+    <button id="bOut" disabled title="2回押すと作戦から離脱">離脱</button>
     <button id="bCal">正面</button>
     <button id="bBg">背景:CG</button>
     <button id="bSnd" aria-pressed="true">音</button>
@@ -186,6 +189,7 @@ const SFX = (() => {
     warn() { if (ok('warn', 1200)) { tone(880, 880, 0.12, 'square', 0.1); tone(660, 660, 0.12, 'square', 0.1, 0.16); } },
     alarm() { if (ok('alarm', 600)) for (let i = 0; i < 3; i++) tone(1000, 1000, 0.1, 'square', 0.16, i * 0.16); },
     dash() { if (ok('dash', 200)) noise(0.6, 0.3, 'bandpass', 400, 2400); },
+    lockon() { if (ok('lockon', 250)) for (let i = 0; i < 3; i++) tone(1480, 1480, 0.05, 'square', 0.12, i * 0.08); },
     dodge() { if (ok('dodge', 150)) tone(500, 900, 0.08, 'triangle', 0.08); },
     clear() { if (ok('clr', 500)) [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.2, 'square', 0.1, i * 0.12)); },
     // launch sequence
@@ -452,15 +456,15 @@ const enemyArt = {};
 // ================= data =================
 const VULCAN = { name: 'バルカン', dmg: 4, cd: 0.14, fx: 'bullet', en: 0 };
 const MACHINES = {
-  zx: { name: 'ZX-01 エアロウィング', call: 'AEROWING', desc: '可変の万能機。どの距離でも戦える。', armor: 100, lockMax: 3,
+  zx: { name: 'ZX-01 エアロウィング', call: 'AEROWING', desc: '可変の万能機。どの距離でも戦える。', armor: 100, lockMax: 3, evade: { kind: 'roll', cd: 4 },
     near: { name: 'ビームサーベル', label: 'BEAM SABER', dmg: 60, cd: 0.9, fx: 'slash', en: 0 },
     mid:  { name: 'ビームライフル', label: 'BEAM RIFLE', dmg: 26, cd: 0.7, fx: 'beam', en: 8 },
     far:  { name: 'ロングビームキャノン', label: 'LONG BEAM CANNON', dmg: 55, cd: 2.6, fx: 'cannon', en: 26 } },
-  hv: { name: 'HV-02 バスティオン', call: 'BASTION', desc: '重装甲の砲撃機。多数を同時に捕捉、格闘は鈍重。', armor: 160, lockMax: 4,
+  hv: { name: 'HV-02 バスティオン', call: 'BASTION', desc: '重装甲の砲撃機。多数を同時に捕捉、格闘は鈍重。', armor: 160, lockMax: 4, evade: { kind: 'back', cd: 6 },
     near: { name: 'ヒートアックス', label: 'HEAT AXE', dmg: 70, cd: 1.6, fx: 'slash', en: 0 },
     mid:  { name: 'ガトリング', label: 'GATLING GUN', dmg: 9, cd: 0.16, fx: 'bullet', en: 1.6 },
     far:  { name: 'ツインキャノン', label: 'TWIN CANNON', dmg: 85, cd: 3.2, fx: 'cannon', en: 30 } },
-  sn: { name: 'SN-03 ニードル', call: 'NEEDLE', desc: '装甲は薄いが、単一目標を遠くから確実に落とす。', armor: 70, lockMax: 1,
+  sn: { name: 'SN-03 ニードル', call: 'NEEDLE', desc: '装甲は薄いが、単一目標を遠くから確実に落とす。', armor: 70, lockMax: 1, evade: { kind: 'fwd', cd: 3 },
     near: { name: 'ビームナイフ', label: 'BEAM KNIFE', dmg: 38, cd: 0.45, fx: 'slash', en: 0 },
     mid:  { name: 'ビームSMG', label: 'BEAM SMG', dmg: 12, cd: 0.22, fx: 'bullet', en: 2.5 },
     far:  { name: 'ロングレールガン', label: 'LONG RAIL GUN', dmg: 95, cd: 2.1, fx: 'rail', en: 24 } }
@@ -637,7 +641,7 @@ function resetSortie() {
   Object.assign(game, { stageIdx: 0, loop: 0, waveInStage: 0, gw: 0, score: 0,
     armorMax: game.m.armor, armor: game.m.armor, en: 100, fuel: 100, broken: 0,
     enemies: [], fx: [], selected: null, locks: [], cd: { near: 0, mid: 0, far: 0 },
-    dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null });
+    dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null, evade: null, quitT: 0 });
 }
 function startGame() {
   resetSortie();
@@ -681,6 +685,7 @@ function update(dt) {
   game.shake = Math.max(0, game.shake - dt * 2.5);
   game.dashT = Math.max(0, game.dashT - dt);
   game.dashCd = Math.max(0, game.dashCd - dt);
+  if (game.evade && (game.evade.t += dt) >= game.evade.dur) game.evade = null;
   for (const f of game.fx) f.t += dt;
   game.fx = game.fx.filter(f => f.t < f.dur);
   game.flash = Math.max(0, (game.flash || 0) - dt * 1.4);
@@ -720,8 +725,13 @@ function update(dt) {
     if (Math.abs(e.elT - e.el) < 0.5) e.elT = rnd(er[0], er[1]);
     e.el = clamp(e.el, er[0] - 1, er[1] + 1);
     e.flash = Math.max(0, e.flash - dt); e.hurt = Math.max(0, e.hurt - dt);
-    e.fireCd -= dt;
-    if (e.fireCd <= 0) { e.fireCd = e.T.fireCd * rnd(.8, 1.3); if (e.dist <= e.T.range && e.mode !== 'ambush') enemyFire(e); }
+    if (e.lockT > 0) { // locked on: fires when the lock completes unless the pilot breaks it by evading
+      e.lockT -= dt;
+      if (e.lockT <= 0) { e.lockT = 0; if (e.dist <= e.T.range) enemyFire(e); }
+    } else {
+      e.fireCd -= dt;
+      if (e.fireCd <= 0) { e.fireCd = e.T.fireCd * rnd(.8, 1.3); if (e.dist <= e.T.range && e.mode !== 'ambush') { e.lockT = e.T.boss ? 1.4 : 1.1; SFX.lockon(); } }
+    }
     if (e.T.spawns) { e.spawnT -= dt; if (e.spawnT <= 0 && game.enemies.length < 6) { e.spawnT = rnd(12, 16); spawn(Math.random() < .6 ? 'vespa' : 'garm', e); say('要塞から艦載機が発進。'); } }
   }
   playerAttack(dt);
@@ -758,7 +768,7 @@ function damagePlayer(d) {
   if (b > game.broken) {
     for (let i = game.broken; i < b; i++) {
       game.announce = { text: `${PARTS[i]} 損傷`, t: 1.8, col: BANDC.near };
-      say(['左脚損傷：ブーストの再使用が遅くなります。', '右脚損傷：ブースト中の回避力が落ちます。', '左腕損傷：格闘威力が低下、被弾しやすくなります。', '頭部損傷：照準マーカーを失いました。', ''][i]);
+      say(['左脚損傷：回避の再使用が遅くなります。', '右脚損傷：回避でロックオンを外しにくくなります。', '左腕損傷：格闘威力が低下、被弾しやすくなります。', '頭部損傷：照準マーカーを失いました。', ''][i]);
     }
     game.broken = b; SFX.alarm();
     if (navigator.vibrate) try { navigator.vibrate([60, 40, 60]); } catch (err) {}
@@ -825,14 +835,33 @@ function kill(e) {
   if (T.boss) { game.shake = 1; game.announce = { text: `${T.name} 撃破`, t: 2.4 }; }
   say(`${T.name} 撃墜。`);
 }
-function dash(dir) {
-  const L = game.locks[0];
-  if (!L || game.dashCd > 0 || game.fuel < 12) return;
-  const to = dir < 0 ? Math.max(60, L.dist * 0.42) : Math.min(1150, L.dist * 1.8 + 80);
-  L.knock = { from: L.dist, to, t: 0, dur: 0.7 };
-  game.fuel -= 12;
-  game.dashT = 0.7; game.dashCd = 1.6 * (brokenPart(0) ? 1.6 : 1);
+const EVADE_NAME = { roll: 'ローリング', fwd: '前方ダッシュ', back: '後方ダッシュ' };
+// Evasive boost: breaks every lock currently on the pilot (70% each with the right leg broken).
+// roll = barrel roll sideways, fwd / back = dash that also closes / opens the distance to every enemy.
+function evade() {
+  const ev = game.m.evade;
+  if (game.state !== 'play' || game.dashCd > 0 || game.fuel < 10) return;
+  game.fuel -= 10;
+  game.dashT = 0.7; game.dashCd = ev.cd * (brokenPart(0) ? 1.6 : 1);
+  game.evade = { kind: ev.kind, t: 0, dur: 0.7, dir: Math.random() < 0.5 ? -1 : 1 };
+  let broke = 0;
+  for (const e of game.enemies) {
+    if (e.lockT > 0 && (!brokenPart(1) || Math.random() < 0.7)) { e.lockT = 0; e.fireCd = e.T.fireCd * rnd(.6, 1); broke++; }
+    if (ev.kind !== 'roll') e.knock = { from: e.dist, to: ev.kind === 'fwd' ? Math.max(60, e.dist * 0.82) : Math.min(1150, e.dist * 1.22), t: 0, dur: 0.6 };
+  }
   SFX.dash();
+  if (broke) { SFX.dodge(); game.announce = { text: 'ロックオン解除', t: 1.2, col: PHOS }; say(`回避成功（${EVADE_NAME[ev.kind]}）。${broke}機のロックオンを外しました。`); }
+  else say(`${EVADE_NAME[ev.kind]}で回避行動。`);
+}
+// Withdraw from the mission: needs a second press within 2.5 s
+function withdraw() {
+  if (game.state !== 'play') return;
+  if (game.quitT <= nowS) { game.quitT = nowS + 2.5; say('もう一度「離脱」を押すと作戦から離脱します。'); return; }
+  game.state = 'over'; game.locks = []; game.selected = null; game.evade = null;
+  $('#bootTitle').textContent = '作戦から離脱しました';
+  $('#bootText').textContent = `${stage().name}・第${game.gw}波で離脱、スコア ${game.score}。機体を選んで再出撃できます。`;
+  $('#bBoot').textContent = '再出撃';
+  $('#boot').hidden = false;
 }
 
 // ================= drawing: world =================
@@ -1120,6 +1149,26 @@ function drawReticle() {
   }
   ctx.restore();
 }
+function drawLockWarning() {
+  const lockers = game.state === 'play' ? game.enemies.filter(e => e.lockT > 0) : [];
+  if (!lockers.length) return;
+  ctx.save();
+  const on = reduceMotion || Math.sin(nowS * 16) > -0.2;
+  const dirs = [...new Set(lockers.map(e => { const d = wrap180(e.az - view.h); return Math.abs(d) < 35 ? '前方' : Math.abs(d) > 135 ? '後方' : d < 0 ? '左' : '右'; }))];
+  if (on) {
+    ctx.font = `600 16px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = BANDC.near;
+    ctx.shadowColor = BANDC.near; ctx.shadowBlur = 10;
+    ctx.fillText('LOCK-ON WARNING', cx, top + 34); ctx.shadowBlur = 0;
+    ctx.font = `600 12px ${FONT}`; ctx.fillText(`ロックオン警告：${dirs.join('・')}　回避ボタンで回避`, cx, top + 54);
+  }
+  for (const e of lockers) { // red closing brackets on locking enemies in view
+    const c = projP(enemyFrame(e).P); if (!c || !inView(e)) continue;
+    const r = 18 + 30 * (e.lockT / (e.T.boss ? 1.4 : 1.1));
+    ctx.strokeStyle = BANDC.near; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4 + nowS * 3; ctx.beginPath(); ctx.arc(c[0], c[1], r, a - 0.35, a + 0.35); ctx.stroke(); }
+  }
+  ctx.restore();
+}
 function drawOverlayText() {
   ctx.save();
   ctx.font = `600 12px ${FONT}`; ctx.textBaseline = 'top'; ctx.fillStyle = PHOS;
@@ -1327,8 +1376,12 @@ function updateConsole(t) {
     wpnEl.textContent = `${BANDJ[band]} ▸ ${wpn.name}${wpn === VULCAN ? '(EN不足)' : ''}　${st}　◆${game.locks.length}/${game.m.lockMax}`;
     wpnEl.style.color = BANDC[band];
   }
-  const can = !!L && game.dashCd <= 0 && game.fuel >= 12 && game.state === 'play';
-  bIn.disabled = !can; bOut.disabled = !can;
+  const play = game.state === 'play', locked = play && game.enemies.some(e => e.lockT > 0);
+  bIn.disabled = !(play && game.dashCd <= 0 && game.fuel >= 10);
+  bIn.textContent = !play ? '回避' : game.dashCd > 0 ? `回避 ${game.dashCd.toFixed(1)}` : locked ? '⚠ 回避' : '回避';
+  if (locked && !bIn.disabled) bIn.setAttribute('data-alert', ''); else bIn.removeAttribute('data-alert');
+  bOut.disabled = !play;
+  bOut.textContent = play && game.quitT > nowS ? 'もう一度で離脱' : '離脱';
 }
 function say(t) { if (t) msg.textContent = t; }
 
@@ -1555,6 +1608,14 @@ function frame(t) {
   const sh = reduceMotion ? 0 : game.shake * game.shake * 10;
   ctx.save();
   if (sh > 0.1) ctx.translate(rnd(-sh, sh), rnd(-sh, sh));
+  const ev = game.evade;
+  if (ev && !reduceMotion) { // evasive move seen from the cockpit
+    const k = ev.t / ev.dur, s = Math.sin(k * Math.PI), ease = k * k * (3 - 2 * k);
+    ctx.translate(cx, cy);
+    if (ev.kind === 'roll') { ctx.translate(-ev.dir * s * W * 0.22, 0); ctx.rotate(ev.dir * ease * Math.PI * 2); }
+    else ctx.scale(ev.kind === 'fwd' ? 1 + 0.3 * s : 1 - 0.18 * s, ev.kind === 'fwd' ? 1 + 0.3 * s : 1 - 0.18 * s);
+    ctx.translate(-cx, -cy);
+  }
   const launching = game.state === 'launch';
   const space = !launching && game.state !== 'idle' && stage().kind === 'space';
   if (launching) drawLaunch();
@@ -1572,10 +1633,11 @@ function frame(t) {
   drawCanopy();
   if (launching) drawLaunchPanel();
   else {
-    drawMarkers();
+    if (!game.evade || reduceMotion) drawMarkers(); // markers would not line up with the rolling view
     drawTape();
     drawReticle();
     drawOverlayText();
+    drawLockWarning();
   }
   if (game.flash > 0) { ctx.fillStyle = `rgba(220,255,232,${game.flash.toFixed(3)})`; ctx.fillRect(0, 0, W, viewH()); }
   drawRadar();
@@ -1634,8 +1696,8 @@ addEventListener('keydown', e => {
   if (manual) { manYaw = (manYaw + k[0] + 360) % 360; manPitch = clamp(manPitch + k[1], -85, 85); }
   else { offYaw += k[0]; offPitch = clamp(offPitch + k[1], -60, 60); }
 });
-bIn.addEventListener('click', () => dash(-1));
-bOut.addEventListener('click', () => dash(1));
+bIn.addEventListener('click', evade);
+bOut.addEventListener('click', withdraw);
 $('#bCal').addEventListener('click', calibrate);
 $('#bSnd').addEventListener('click', e => { SFX.init(); e.currentTarget.setAttribute('aria-pressed', SFX.toggle()); });
 
