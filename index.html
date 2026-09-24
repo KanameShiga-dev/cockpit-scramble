@@ -63,11 +63,11 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
   .ctrls button{padding:4px 2px}
 }
 
-#boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);padding:16px;touch-action:auto}
-#boot[hidden]{display:none}
-#boot .card{width:100%;max-width:24rem;max-height:100%;overflow:auto;border:1px solid var(--phos-dim);background:rgba(0,12,5,.95);padding:18px}
-#boot h1{margin:0 0 6px;font-size:21px;font-weight:600;letter-spacing:.06em;text-shadow:0 0 10px rgba(61,255,122,.6)}
-#boot p{margin:0 0 12px;font-size:12.5px;line-height:1.7;color:var(--phos-dim)}
+#boot,#geo{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);padding:16px;touch-action:auto}
+#boot[hidden],#geo[hidden]{display:none}
+#boot .card,#geo .card{width:100%;max-width:24rem;max-height:100%;overflow:auto;border:1px solid var(--phos-dim);background:rgba(0,12,5,.95);padding:18px}
+#boot h1,#geo h1{margin:0 0 6px;font-size:21px;font-weight:600;letter-spacing:.06em;text-shadow:0 0 10px rgba(61,255,122,.6)}
+#boot p,#geo p{margin:0 0 12px;font-size:12.5px;line-height:1.7;color:var(--phos-dim)}
 .machines{display:flex;flex-direction:column;gap:7px;margin-bottom:12px}
 .mc{text-align:left;padding:9px 11px;display:block;width:100%}
 .mc b{display:block;font-size:14.5px;margin-bottom:2px}
@@ -96,6 +96,8 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
   #msg{display:block}
   .ctrls button{font-size:11px;padding:6px 1px;white-space:nowrap}
 }
+#geo button{width:100%;padding:11px;margin-top:8px;font-size:14px}
+#bGeoYes{background:var(--phos);color:#001a08;border-color:var(--phos);font-weight:600}
 #bBoot{width:100%;padding:12px;font-size:15px;font-weight:600;background:var(--phos);color:#001a08;border-color:var(--phos)}
 </style>
 </head>
@@ -127,6 +129,16 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
   <p id="msg" role="status"></p>
 </section>
 
+<div id="geo" hidden role="dialog" aria-modal="true" aria-labelledby="geoTitle">
+  <div class="card">
+    <h1 id="geoTitle">次の作戦：月面要塞へ</h1>
+    <p>実際の空で月が見える方向へ向かって突き進む作戦です。追加装備（フルアーマー・ブースター）を装着して再発進します。</p>
+    <p>月の方向を計算するために、現在地（緯度・経度）を使います。現在地はこの端末の中で計算に使うだけで、送信も保存もしません。使わない場合は、月を仮の方向に置きます。</p>
+    <p id="geoMsg" aria-live="polite"></p>
+    <button id="bGeoYes">現在地を使う</button>
+    <button id="bGeoNo">使わない（仮の方向）</button>
+  </div>
+</div>
 <div id="boot">
   <div class="card">
     <h1 id="bootTitle">機体選択</h1>
@@ -515,7 +527,8 @@ const STAGES = [
   { kind: 'ground', name: '地上戦域', waves: 3, boss: 'titan', pools: [['garm'], ['garm', 'garm', 'vespa'], ['garm', 'vespa', 'hawk']] },
   { kind: 'space', name: '宇宙戦域', waves: 3, boss: 'fort', pools: [['vespa', 'garm'], ['vespa', 'garm', 'hawk'], ['vespa', 'hawk', 'garm', 'vespa']] },
   { kind: 'ground', name: '巨大兵器破壊', waves: 0, mission: 'weapon', time: 180, guardName: '冷却装置', chargeRate: [5, 3.5], escorts: ['garm', 'hawk'], escortT: 11, escortMax: 3 },
-  { kind: 'space', name: '戦艦撃破', waves: 0, mission: 'ship', guardName: '砲塔', chargeRate: [4, 4], escorts: ['vespa', 'garm'], escortT: 12, escortMax: 4, carrier: true }
+  { kind: 'space', name: '戦艦撃破', waves: 0, mission: 'ship', guardName: '砲塔', chargeRate: [4, 4], escorts: ['vespa', 'garm'], escortT: 12, escortMax: 4, carrier: true },
+  { kind: 'space', name: '月面要塞へ', waves: 0, mission: 'moon', clearText: '月面要塞に到達' }
 ];
 const PARTS = ['左脚', '右脚', '左腕', '頭部', '右腕'];
 
@@ -559,13 +572,14 @@ const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0]/l,
 const dirv = (az, el) => { const A = az * D, E = el * D; return [Math.cos(E)*Math.sin(A), Math.cos(E)*Math.cos(A), Math.sin(E)]; };
 
 let raw = { a: 0, b: 90, g: 0 }, gotSensor = false, manual = true;
+let alphaOff = null, sensorH = 0; // alphaOff: raw alpha -> alpha relative to (magnetic) north; sensorH: unsmoothed game heading
 let manYaw = 0, manPitch = 6, offYaw = 0, offPitch = 0;
 let gain = 1.5, calH = null, prevH = null, accH = 0;
 let B = { r: [1,0,0], u: [0,0,1], f: [0,1,0] };
 const view = { h: 0, p: 0, r: 0 };
 
-function sensorBasis() {
-  const a = raw.a*D, b = raw.b*D, g = raw.g*D;
+function sensorBasis(alpha = raw.a) {
+  const a = alpha*D, b = raw.b*D, g = raw.g*D;
   const cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
   const X = [cA*cG - sA*sB*sG, cG*sA + cA*sB*sG, -cB*sG];
   const Y = [-cB*sA, cA*cB, sB];
@@ -590,7 +604,8 @@ function sensorView() {
   if (calH === null) { calH = h; prevH = h; accH = 0; }
   accH += wrap180(h - prevH); prevH = h;
   const pg = 1 + (gain - 1) * 0.5;
-  return basisFrom(calH + accH * gain + offYaw, clamp(p * pg + offPitch, -85, 85), Math.abs(p) > 70 ? 0 : r);
+  sensorH = calH + accH * gain + offYaw;
+  return basisFrom(sensorH, clamp(p * pg + offPitch, -85, 85), Math.abs(p) > 70 ? 0 : r);
 }
 function calibrate() {
   if (gotSensor && !manual) { calH = null; offYaw = 0; offPitch = 0; }
@@ -675,6 +690,7 @@ function startWave() {
 // The core charges a main shot (2 s lock-on, heavy damage unless evaded); escorts reinforce.
 //  weapon: giant cannon + 2 coolant tanks, 3 minute limit   ship: battleship + 4 turrets that fire, launches fighters
 function startMission(st) {
+  if (st.mission === 'moon') { briefMoon(); return; }
   game.mission = { kind: st.mission, time: st.time ? st.time * (1 - 0.1 * Math.min(game.loop, 3)) : null, charge: 0, escortT: 6, done: false, armorMsgT: 0 };
   const az = (view.h + rnd(-50, 50) + 360) % 360;
   const place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0, mode: 'assault' });
@@ -696,6 +712,7 @@ function startMission(st) {
 function updateMission(dt) {
   const M = game.mission, st = stage();
   if (!M || M.done) return;
+  if (M.kind === 'moon') { updateMoon(dt); return; }
   M.armorMsgT -= dt;
   if (M.time != null) { M.time -= dt; if (M.time <= 0) { missionFailed('制限時間切れ。目標の破壊に失敗しました。'); return; } }
   const core = game.enemies.find(e => e.T.core), guards = game.enemies.filter(e => e.T.guard).length;
@@ -711,6 +728,107 @@ function updateMission(dt) {
       if (st.carrier) say('戦艦から艦載機が発進。');
     }
   }
+}
+// Moon's horizontal position (about 1-2 degree accuracy): low-precision mean elements from
+// aa.quae.nl "Positions in the Sky", sidereal time from the USNO GMST formula. Azimuth from north, clockwise.
+function moonAltAz(lat, lon, date) {
+  const JD = date.getTime() / 86400000 + 2440587.5, d = JD - 2451545.0;
+  const L = 218.316 + 13.176396 * d, Mm = 134.963 + 13.064993 * d, Fm = 93.272 + 13.229350 * d;
+  const lam = (L + 6.289 * Math.sin(Mm * D)) * D, bet = 5.128 * Math.sin(Fm * D) * D, eps = 23.4397 * D;
+  const ra = Math.atan2(Math.sin(lam) * Math.cos(eps) - Math.tan(bet) * Math.sin(eps), Math.cos(lam));
+  const dec = Math.asin(Math.sin(bet) * Math.cos(eps) + Math.cos(bet) * Math.sin(eps) * Math.sin(lam));
+  const JD0 = Math.floor(JD - 0.5) + 0.5, H = (JD - JD0) * 24;
+  const gmst = ((6.697375 + 0.065709824279 * (JD0 - 2451545.0) + 1.0027379 * H) % 24 + 24) % 24;
+  const ha = (gmst * 15 + lon) * D - ra, phi = lat * D;
+  const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(ha));
+  const azS = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+  return { az: (azS / D + 180 + 360) % 360, alt: alt / D };
+}
+// Lunar run: brief (location consent) -> relaunch with full armor + booster -> fly toward the moon.
+// Facing the moon (within 20 degrees) boosts; interceptors attack but need not be destroyed. Clear on arrival.
+let geoPos = null;
+const MOON_KM = 384400;
+function briefMoon() {
+  game.state = 'brief';
+  $('#geoMsg').textContent = '';
+  $('#geo').hidden = false;
+  $('#bGeoYes').focus();
+}
+function endBrief(useGeo) {
+  const go = () => { $('#geo').hidden = true; startLaunch(true); };
+  if (!useGeo || !navigator.geolocation) { geoPos = null; go(); return; }
+  $('#geoMsg').textContent = '現在地を取得中…';
+  navigator.geolocation.getCurrentPosition(
+    pos => { geoPos = { lat: pos.coords.latitude, lon: pos.coords.longitude }; go(); },
+    () => { geoPos = null; $('#geoMsg').textContent = '現在地を取得できませんでした。仮の方向で出撃します。'; setTimeout(go, 1200); },
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+}
+function beginMoonRun() {
+  game.faMax = Math.round(game.armorMax * 0.5); game.fa = game.faMax;
+  game.mission = { kind: 'moon', dist: MOON_KM, done: false, spawnT: 4, aligned: false, az: view.h, el: 25, fixAz: view.h, real: false, geoT: 0, mt: null };
+  updateMoonDir(0);
+  game.announce = { text: '作戦目標：月面要塞への到達', t: 3.2, col: BANDC.mid };
+  say(game.mission.real ? '実際の月の方向へ機首を向けると、ブースターで加速します。' : '月は仮の方向に表示しています。月へ機首を向けると加速します。');
+  SFX.alarm();
+}
+function updateMoonDir(dt) {
+  const M = game.mission;
+  M.geoT -= dt;
+  if (geoPos && M.geoT <= 0) { M.geoT = 5; M.mt = moonAltAz(geoPos.lat, geoPos.lon, new Date()); }
+  const th = trueHeading();
+  if (M.mt && th != null) { // same turn gain as the view, so the moon sits where the device physically points at it
+    const pg = 1 + (gain - 1) * 0.5;
+    M.az = (sensorH + gain * wrap180(M.mt.az - th) + 360) % 360; M.el = clamp(M.mt.alt * pg + offPitch, -85, 85); M.real = true;
+  } else { M.az = M.fixAz; M.el = 25; M.real = false; }
+}
+function updateMoon(dt) {
+  const M = game.mission;
+  updateMoonDir(dt);
+  const v = dirv(M.az, M.el);
+  M.aligned = Math.acos(clamp(dot(v, B.f), -1, 1)) / D < 20;
+  M.dist = Math.max(0, M.dist - (M.aligned ? 2600 : 600) * dt);
+  if (M.dist <= 0) {
+    M.done = true; game.bossWave = true;
+    for (const x of [...game.enemies]) kill(x);
+    game.announce = { text: '月面要塞に到達', t: 2.6, col: BANDC.far };
+    return;
+  }
+  M.spawnT -= dt;
+  if (M.spawnT <= 0) {
+    M.spawnT = rnd(6, 9) * (1 - 0.15 * Math.min(game.loop, 3));
+    if (game.enemies.length < 5) { const n = Math.random() < 0.4 ? 2 : 1; for (let i = 0; i < n; i++) spawn(Math.random() < 0.6 ? 'vespa' : 'garm', { az: M.az + rnd(-40, 40), el: M.el, dist: rnd(700, 1000) }); say('迎撃機が接近。'); }
+  }
+}
+function drawMoon() {
+  const M = game.mission;
+  if (!M || M.kind !== 'moon') return;
+  const c = projDir(M.az, M.el), dkm = Math.max(1500, M.dist);
+  const r = clamp(F * Math.tan(Math.atan(1737 / dkm)) * 6, 14, Math.max(W, H) * 1.3); // apparent size, exaggerated
+  ctx.save();
+  if (c && c[0] > -r && c[0] < W + r && c[1] > -r && c[1] < H + r) {
+    const g = ctx.createRadialGradient(c[0] - r * 0.3, c[1] - r * 0.3, r * 0.1, c[0], c[1], r);
+    g.addColorStop(0, 'rgba(200,255,220,.55)'); g.addColorStop(1, 'rgba(40,90,60,.35)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = PHOS; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(61,255,122,.45)';
+    for (const [dx, dy, k] of [[-0.3, -0.2, 0.18], [0.25, 0.1, 0.12], [-0.05, 0.4, 0.1], [0.4, -0.35, 0.08], [-0.45, 0.25, 0.07]]) { ctx.beginPath(); ctx.arc(c[0] + dx * r, c[1] + dy * r, k * r, 0, Math.PI * 2); ctx.stroke(); }
+    const s = Math.max(10, r * 0.12), blink = reduceMotion || Math.sin(nowS * 6) > -0.3; // fortress marker
+    if (blink) { ctx.strokeStyle = BANDC.near; ctx.lineWidth = 2; ctx.strokeRect(c[0] + r * 0.1 - s, c[1] - r * 0.1 - s, s * 2, s * 2); }
+    ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = BANDC.mid;
+    ctx.fillText(`月面要塞 ${Math.ceil(M.dist).toLocaleString()} km`, c[0], Math.min(bottom - 16, c[1] + r + 6));
+    if (M.aligned && !reduceMotion) { // boost streaks from the moon
+      ctx.strokeStyle = 'rgba(200,255,220,.3)';
+      for (let i = 0; i < 24; i++) { const a = Math.random() * Math.PI * 2, r0 = r + rnd(20, 80), r1 = r0 + rnd(40, 160);
+        ctx.beginPath(); ctx.moveTo(c[0] + Math.cos(a) * r0, c[1] + Math.sin(a) * r0); ctx.lineTo(c[0] + Math.cos(a) * r1, c[1] + Math.sin(a) * r1); ctx.stroke(); }
+    }
+  } else { // off screen: arrow at the edge toward the moon
+    const dx = wrap180(M.az - view.h), dy = M.el - view.p, a = Math.atan2(-dy, dx), R = Math.min(W, bottom - top) * 0.42;
+    const ax = cx + Math.cos(a) * R, ay = cy + Math.sin(a) * R;
+    ctx.translate(ax, ay); ctx.rotate(a); ctx.fillStyle = BANDC.mid;
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -9); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
+    ctx.rotate(-a); ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('月', 0, 12);
+  }
+  ctx.restore();
 }
 function megaShot(e) {
   e.flash = 0.8; game.shake = 1;
@@ -729,10 +847,10 @@ function missionFailed(why) {
 }
 function stageClear() {
   game.mission = null;
-  game.announce = { text: `${stage().name} 制圧`, t: 2.6 };
+  game.announce = { text: stage().clearText || `${stage().name} 制圧`, t: 2.6 };
   SFX.clear();
   game.stageIdx++;
-  if (game.stageIdx >= STAGES.length) { game.stageIdx = 0; game.loop++; }
+  if (game.stageIdx >= STAGES.length) { game.stageIdx = 0; game.loop++; game.fa = game.faMax = 0; } // full armor lasts one lap
   game.waveInStage = 0; game.fuel = 100;
   game.armor = Math.min(game.armorMax, game.armor + game.armorMax * 0.25);
   applyBackground();
@@ -743,7 +861,7 @@ function resetSortie() {
   Object.assign(game, { stageIdx: 0, loop: 0, waveInStage: 0, gw: 0, score: 0,
     armorMax: game.m.armor, armor: game.m.armor, en: 100, fuel: 100, broken: 0,
     enemies: [], fx: [], selected: null, locks: [], cd: { near: 0, mid: 0, far: 0 },
-    dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null, evade: null, quitT: 0, mission: null });
+    dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null, evade: null, quitT: 0, mission: null, fa: 0, faMax: 0 });
 }
 function startGame() {
   resetSortie();
@@ -841,7 +959,7 @@ function update(dt) {
     if (e.T.spawns) { e.spawnT -= dt; if (e.spawnT <= 0 && game.enemies.length < 6) { e.spawnT = rnd(12, 16); spawn(Math.random() < .6 ? 'vespa' : 'garm', e); say('要塞から艦載機が発進。'); } }
   }
   playerAttack(dt);
-  if (game.state === 'play' && game.enemies.length === 0) {
+  if (game.state === 'play' && game.enemies.length === 0 && !(game.mission && !game.mission.done)) {
     if (game.nextWaveT <= 0) {
       game.nextWaveT = 3;
       if (game.bossWave) stageClear(); else say('全機撃墜。次の編隊を待機中。');
@@ -865,6 +983,11 @@ function enemyFire(e) {
 }
 function damagePlayer(d) {
   if (game.state !== 'play') return;
+  if (game.fa > 0) {
+    const a = Math.min(game.fa, d); game.fa -= a; d -= a;
+    if (game.fa <= 0) { game.fa = 0; game.announce = { text: 'アーマーパージ', t: 2.0, col: BANDC.mid }; say('追加装甲が限界に達し、パージしました。'); SFX.boom(false); }
+    if (d <= 0) { game.hitFlash = 0.25; game.shake = Math.min(1, game.shake + 0.3); SFX.hit(); return; }
+  }
   game.armor -= d;
   game.hitFlash = 0.4; game.shake = Math.min(1, game.shake + 0.5);
   SFX.hit();
@@ -1288,13 +1411,24 @@ function drawOverlayText() {
   if (game.state !== 'idle') {
     const st = stage();
     ctx.textAlign = 'left';
-    if (game.mission && !game.mission.done) {
+    if (game.mission && !game.mission.done && game.mission.kind === 'moon') {
+      const M = game.mission;
+      ctx.fillText(`${st.name}　残り ${Math.ceil(M.dist).toLocaleString()} km`, 14, safeTop + 72);
+      ctx.fillStyle = M.aligned ? PHOS : BANDC.mid;
+      ctx.fillText(`${M.aligned ? 'ブースト加速中' : '月へ機首を向けてください'}　${M.real ? '（実際の月の方向）' : '（仮の方向）'}`, 14, safeTop + 88);
+      ctx.fillStyle = PHOS;
+    } else if (game.mission && !game.mission.done) {
       const M = game.mission, m = M.time != null ? Math.max(0, Math.ceil(M.time)) : null, guards = game.enemies.filter(e => e.T.guard).length;
       ctx.fillText(`${st.name}${m != null ? `　残り ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}` : ''}`, 14, safeTop + 72);
       ctx.fillStyle = M.charge > 70 ? BANDC.near : BANDC.mid;
       ctx.fillText(`主砲充填 ${Math.floor(M.charge)}%${guards ? `　${st.guardName} 残${guards}` : '　装甲低下'}`, 14, safeTop + 88);
       ctx.fillStyle = PHOS;
     } else ctx.fillText(`${st.name} ${game.bossWave ? '大型機' : `第${game.waveInStage}波`}　残${game.enemies.length}`, 14, safeTop + 72);
+    if (game.faMax > 0) { // full armor gauge
+      const fy = safeTop + 104; ctx.fillStyle = game.fa > 0 ? BANDC.mid : DIM; ctx.fillText(game.fa > 0 ? 'FA' : 'FA PURGED', 14, fy);
+      if (game.fa > 0) { ctx.strokeStyle = BANDC.mid; ctx.lineWidth = 1; ctx.strokeRect(36, fy + 3, 80, 6); ctx.fillRect(36, fy + 3, 80 * game.fa / game.faMax, 6); }
+      ctx.fillStyle = PHOS;
+    }
     ctx.textAlign = 'right'; ctx.fillText(String(game.score).padStart(6, '0'), W - 14, safeTop + 72);
     const boss = game.enemies.find(e => e.T.boss);
     if (boss) {
@@ -1549,10 +1683,11 @@ const LAUNCH_CUES = [[0.15, () => SFX.boot()], [0.6, () => SFX.tick()], [0.9, ()
   [LAUNCH.count[0], () => SFX.count(0)], [LAUNCH.count[1], () => SFX.count(1)], [LAUNCH.count[2], () => SFX.count(2)],
   [LAUNCH.go, () => { SFX.catapult(); game.shake = 0.9; }], [LAUNCH.exit, () => SFX.exit()]];
 const LAMPS = [['STANDBY', '#ff4d4d'], ['SET', '#ffc94d'], ['LAUNCH', '#3dff7a']];
-function startLaunch() {
-  resetSortie();
-  Object.assign(game, { state: 'launch', launch: { t: 0, cue: 0 } });
-  say(`${game.m.name}（${game.pilot}）発進シークエンス。画面タップでスキップできます。`);
+function startLaunch(equip) { // equip: relaunch mid-run with full armor + booster (keeps the run state)
+  if (!equip) resetSortie();
+  Object.assign(game, { state: 'launch', launch: { t: 0, cue: 0, equip: !!equip }, enemies: [], locks: [], selected: null });
+  say(equip ? '追加装備（フルアーマー・ブースター）を装着して再発進。画面タップでスキップできます。'
+    : `${game.m.name}（${game.pilot}）発進シークエンス。画面タップでスキップできます。`);
 }
 function skipLaunch() {
   const L = game.launch;
@@ -1564,7 +1699,7 @@ function updateLaunch(dt) {
   while (L.cue < LAUNCH_CUES.length && L.t >= LAUNCH_CUES[L.cue][0]) LAUNCH_CUES[L.cue++][1]();
   if (reduceMotion && L.t > LAUNCH.go + 0.3 && L.t < LAUNCH.exit) L.t = LAUNCH.exit; // no tunnel run: cut to the exit
   if (L.t >= LAUNCH.go && L.t < LAUNCH.exit) game.shake = Math.max(game.shake, 0.35);
-  if (L.t >= LAUNCH.end) { startGame(); game.flash = 0.9; }
+  if (L.t >= LAUNCH.end) { if (L.equip) { game.state = 'play'; beginMoonRun(); } else startGame(); game.flash = 0.9; }
 }
 const launchTravel = t => reduceMotion ? 0 : 30 * Math.max(0, t - LAUNCH.go) ** 2; // 60 m/s² catapult
 function drawLaunch() {
@@ -1627,7 +1762,7 @@ function drawLaunchPanel() {
   }
   const al = t < 0.3 ? t / 0.3 : t > LAUNCH.go ? Math.max(0, 1 - (t - LAUNCH.go) / 0.7) : 1;
   if (al <= 0) { ctx.restore(); return; }
-  const w = Math.min(W - 40, checking ? 348 : 320), h = checking ? 206 : 184, x = (W - w) / 2, y = Math.max(safeTop + 40, cy - h - viewH() * 0.02);
+  const w = Math.min(W - 40, checking ? 348 : 320), h = checking ? (game.launch.equip ? 238 : 206) : 184, x = (W - w) / 2, y = Math.max(safeTop + 40, cy - h - viewH() * 0.02);
   ctx.globalAlpha = al;
   ctx.fillStyle = 'rgba(0,22,10,.72)'; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = 'rgba(61,255,122,.05)'; for (let yy = y + 2; yy < y + h; yy += 3) ctx.fillRect(x, yy, w, 1); // scanlines
@@ -1635,7 +1770,7 @@ function drawLaunchPanel() {
   ctx.lineWidth = 3; for (const [px, py, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
     ctx.beginPath(); ctx.moveTo(px + dx * 16, py); ctx.lineTo(px, py); ctx.lineTo(px, py + dy * 16); ctx.stroke(); }
   ctx.textBaseline = 'top'; ctx.fillStyle = DIM; ctx.font = `600 10px ${FONT}`;
-  ctx.textAlign = 'left'; ctx.fillText(checking ? 'PRE-LAUNCH CHECK' : 'MOBILE UNIT  LAUNCH SEQUENCE', x + 12, y + 10);
+  ctx.textAlign = 'left'; ctx.fillText(checking ? 'PRE-LAUNCH CHECK' : game.launch.equip ? 'LUNAR ASSAULT SEQUENCE' : 'MOBILE UNIT  LAUNCH SEQUENCE', x + 12, y + 10);
   ctx.textAlign = 'right'; ctx.fillText('CATAPULT No.1', x + w - 12, y + 10);
   const code = game.m.name.split(' ')[0];
   if (checking) drawCheckView(t, x, y, w, h, code);
@@ -1678,6 +1813,11 @@ function drawCheckView(t, x, y, w, h, code) {
     const label = name === 'ARMOR' ? `ARMOR ${game.m.armor}` : name;
     row(label, t < t0 + 0.3 ? '.'.repeat(1 + Math.floor((t - t0) / 0.1) % 3) : 'OK', t < t0 + 0.3 ? DIM : PHOS);
   });
+  if (game.launch.equip) { // additional equipment for the lunar assault
+    ly += 5; ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = BANDC.mid; ctx.fillText('EQUIPMENT', lx, ly); ly += 15;
+    if (t >= 3.2) row(`FULL ARMOR +${Math.round(game.armorMax * 0.5)}`, 'SET', BANDC.mid);
+    if (t >= 3.45) row('BOOST UNIT', 'SET', BANDC.mid);
+  }
   if (t >= GREEN_T && Math.sin(t * 14) > -0.4) {
     ctx.font = `600 15px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = PHOS; ctx.shadowColor = PHOS; ctx.shadowBlur = 10;
     ctx.fillText('ALL GREEN', (lx + rx) / 2, y + h - 24); ctx.shadowBlur = 0;
@@ -1692,7 +1832,7 @@ function drawIdView(t, x, y, w, h, code) {
   }
   ctx.textAlign = 'center'; ctx.fillStyle = '#c9ffd9'; ctx.font = `600 42px ${FONT}`;
   ctx.shadowColor = PHOS; ctx.shadowBlur = 14; ctx.fillText(shown, x + w / 2, y + 24); ctx.shadowBlur = 0;
-  if (u > 0.5) { ctx.font = `600 15px ${FONT}`; ctx.fillStyle = PHOS; ctx.fillText(game.m.call, x + w / 2, y + 70); }
+  if (u > 0.5) { ctx.font = `600 15px ${FONT}`; ctx.fillStyle = PHOS; ctx.fillText(game.m.call + (game.launch.equip ? ' / FULL ARMOR' : ''), x + w / 2, y + 70); }
   if (u > 0.8) {
     ctx.font = `400 10px ${FONT}`; ctx.fillStyle = DIM; ctx.textAlign = 'right'; ctx.fillText('PILOT', x + w / 2 - 6, y + 93);
     ctx.font = `600 13px ${FONT}`; ctx.fillStyle = PHOS; ctx.textAlign = 'left'; ctx.fillText(game.pilot.toUpperCase(), x + w / 2 + 2, y + 91);
@@ -1739,7 +1879,7 @@ function frame(t) {
   const space = !launching && game.state !== 'idle' && stage().kind === 'space';
   if (launching) drawLaunch();
   else {
-    if (space) drawStars();
+    if (space) { drawStars(); drawMoon(); }
     else if (bg === 'wire' && camOK && processWire()) {
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(wire, 0, 0, W, viewH()); ctx.restore();
     }
@@ -1816,6 +1956,8 @@ addEventListener('keydown', e => {
   else { offYaw += k[0]; offPitch = clamp(offPitch + k[1], -60, 60); }
 });
 bIn.addEventListener('click', evade);
+$('#bGeoYes').addEventListener('click', () => endBrief(true));
+$('#bGeoNo').addEventListener('click', () => endBrief(false));
 bOut.addEventListener('click', withdraw);
 $('#bCal').addEventListener('click', calibrate);
 $('#bSnd').addEventListener('click', e => { SFX.init(); e.currentTarget.setAttribute('aria-pressed', SFX.toggle()); });
@@ -1849,7 +1991,16 @@ async function requestSensors() {
     if (e.alpha == null && e.beta == null && e.gamma == null) return;
     raw = { a: e.alpha || 0, b: e.beta || 0, g: e.gamma || 0 };
     if (!gotSensor) { gotSensor = true; manual = false; calH = null; }
+    if (typeof e.webkitCompassHeading === 'number' && e.alpha != null) setAlphaOff(360 - e.webkitCompassHeading - e.alpha); // iOS: degrees from magnetic north
   });
+  addEventListener('deviceorientationabsolute', e => { if (e.alpha != null && gotSensor) setAlphaOff(e.alpha - raw.a); }); // Android: alpha relative to north
+}
+function setAlphaOff(x) { alphaOff = alphaOff == null ? wrap180(x) : wrap180(alphaOff + wrap180(x - alphaOff) * 0.1); }
+// true (magnetic) heading of the camera direction, or null without a compass
+function trueHeading() {
+  if (alphaOff == null || !gotSensor || manual) return null;
+  const S = sensorBasis(raw.a + alphaOff);
+  return (Math.atan2(S.f[0], S.f[1]) / D + 360) % 360;
 }
 async function startCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('unsupported');
