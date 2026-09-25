@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>コックピット・スクランブル</title>
+<title>MoonBase</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600&display=swap" rel="stylesheet">
@@ -98,6 +98,14 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
 }
 #geo button{width:100%;padding:11px;margin-top:8px;font-size:14px}
 #bGeoYes{background:var(--phos);color:#001a08;border-color:var(--phos);font-weight:600}
+/* title screen */
+#title{position:fixed;inset:0;z-index:20;background:#01070a;touch-action:auto}
+#title[hidden]{display:none}
+#titleCv{position:absolute;inset:0;width:100%;height:100%;display:block}
+#title .tbox{position:absolute;right:6%;bottom:10%;text-align:right;max-width:66%}
+#title h1{margin:0;font-size:clamp(40px,9vw,92px);font-weight:600;letter-spacing:.04em;line-height:1;color:var(--phos);text-shadow:0 0 18px rgba(61,255,122,.7),0 0 2px #fff}
+#title .sub{margin:8px 0 20px;font-size:12px;letter-spacing:.32em;color:var(--phos-dim)}
+#bStart{padding:12px 40px;font-size:16px;font-weight:600;letter-spacing:.24em;background:var(--phos);color:#001a08;border-color:var(--phos)}
 #bBoot{width:100%;padding:12px;font-size:15px;font-weight:600;background:var(--phos);color:#001a08;border-color:var(--phos)}
 </style>
 </head>
@@ -129,6 +137,14 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
   <p id="msg" role="status"></p>
 </section>
 
+<div id="title" role="dialog" aria-modal="true" aria-labelledby="ttl">
+  <canvas id="titleCv" aria-hidden="true"></canvas>
+  <div class="tbox">
+    <h1 id="ttl">MoonBase</h1>
+    <p class="sub">360° COCKPIT ACTION</p>
+    <button id="bStart">START</button>
+  </div>
+</div>
 <div id="geo" hidden role="dialog" aria-modal="true" aria-labelledby="geoTitle">
   <div class="card">
     <h1 id="geoTitle">次の作戦：月面要塞へ</h1>
@@ -479,11 +495,51 @@ function cutView(im, [x, w]) {
 }
 for (const [k, A] of Object.entries(UNIT_ART)) for (const [store, D] of [[unitArt, A], [unitArtFA, A.fa]]) {
   const im = new Image();
-  im.onload = () => { store[k] = { front: cutView(im, D.front), side: cutView(im, D.side), back: cutView(im, D.back) }; };
+  im.onload = () => { store[k] = { front: cutView(im, D.front), side: cutView(im, D.side), back: cutView(im, D.back) }; if (store === unitArt) drawTitle(); };
   im.src = D.src;
 }
 const unitArtBst = {}; // booster-equipped unit (single 3/4 view, img/unit-<key>-bst.png) for the lunar run
 for (const k of Object.keys(UNIT_ART)) { const im = new Image(); im.onload = () => { unitArtBst[k] = im; }; im.src = `img/unit-${k}-bst.png`; }
+// title screen: three front views behind, head close-ups stacked on the left (img/head-<key>.png)
+const TITLE_ORDER = ['zx', 'sn', 'hv'], heads = {};
+for (const k of TITLE_ORDER) { const im = new Image(); im.onload = () => { heads[k] = im; drawTitle(); }; im.src = `img/head-${k}.png`; }
+function drawTitle() {
+  const el = document.getElementById('title'), cv = document.getElementById('titleCv');
+  if (!el || el.hidden) return;
+  const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.max(1, r.width), h = Math.max(1, r.height);
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = '#01070a'; c.fillRect(0, 0, w, h);
+  c.strokeStyle = 'rgba(61,255,122,.06)'; c.lineWidth = 1; c.beginPath();
+  for (let x = 0; x < w; x += 32) { c.moveTo(x + 0.5, 0); c.lineTo(x + 0.5, h); }
+  for (let y = 0; y < h; y += 32) { c.moveTo(0, y + 0.5); c.lineTo(w, y + 0.5); }
+  c.stroke();
+  const gap = 10, fs = Math.min(w * 0.3 - gap * 2, (h - gap * 4) / 3), colW = fs + gap * 2;
+  // front views behind, to the right of the faces
+  const areaX = colW + 6, areaW = w - areaX;
+  TITLE_ORDER.forEach((k, i) => {
+    const a = unitArt[k]; if (!a) return;
+    const tall = h > w * 1.2; // portrait: narrower, overlapping, centred in the upper part
+    const img = a.front, ih = Math.min(h * (i === 1 ? 0.96 : 0.84), areaW * (tall ? (i === 1 ? 0.62 : 0.54) : (i === 1 ? 0.46 : 0.4)) * img.height / img.width), iw = img.width * ih / img.height;
+    c.globalAlpha = i === 1 ? 0.5 : 0.36;
+    c.drawImage(img, areaX + areaW * (0.2 + 0.3 * i) - iw / 2, tall ? h * 0.42 - ih / 2 + (i === 1 ? 0 : ih * 0.08) : h - ih - h * 0.02, iw, ih);
+  });
+  c.globalAlpha = 1;
+  // head close-ups, stacked on the left
+  const y0 = (h - (fs * 3 + gap * 2)) / 2;
+  TITLE_ORDER.forEach((k, i) => {
+    const x = gap, y = y0 + i * (fs + gap);
+    c.fillStyle = 'rgba(0,18,9,.82)'; c.fillRect(x, y, fs, fs);
+    const im = heads[k];
+    if (im) { const s2 = Math.min(fs / im.width, fs / im.height) * 0.92, iw = im.width * s2, ih = im.height * s2; c.drawImage(im, x + (fs - iw) / 2, y + (fs - ih) / 2, iw, ih); }
+    c.strokeStyle = 'rgba(61,255,122,.55)'; c.lineWidth = 1.5; c.strokeRect(x + 0.5, y + 0.5, fs - 1, fs - 1);
+    c.lineWidth = 3; for (const [px, py, dx, dy] of [[x, y, 1, 1], [x + fs, y, -1, 1], [x, y + fs, 1, -1], [x + fs, y + fs, -1, -1]]) {
+      c.beginPath(); c.moveTo(px + dx * 12, py); c.lineTo(px, py); c.lineTo(px, py + dy * 12); c.stroke(); }
+    c.fillStyle = PHOS; c.font = `600 ${Math.max(10, fs * 0.08)}px ${FONT}`; c.textBaseline = 'bottom'; c.textAlign = 'left';
+    c.fillText(MACHINES[k].name.split(' ')[0], x + 8, y + fs - 6);
+  });
+  c.fillStyle = 'rgba(0,0,0,.18)'; for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1); // scanlines
+}
 // full-armor art while the extra armor is fitted (relaunch for the lunar run, until purged)
 const ownArt = () => ((game.state === 'launch' && game.launch.equip) || game.fa > 0) && unitArtFA[game.key] || unitArt[game.key];
 // Enemy sprites (img/enemies.png): line art keyed to transparency, one hue x 8 levels, packed side by side
@@ -1973,6 +2029,10 @@ addEventListener('keydown', e => {
   else { offYaw += k[0]; offPitch = clamp(offPitch + k[1], -60, 60); }
 });
 bIn.addEventListener('click', evade);
+addEventListener('resize', drawTitle);
+$('#bStart').addEventListener('click', () => { SFX.init(); SFX.green(); $('#title').hidden = true; $('#bBoot').focus(); });
+drawTitle();
+$('#bStart').focus();
 $('#bGeoYes').addEventListener('click', () => endBrief(true));
 $('#bGeoNo').addEventListener('click', () => endBrief(false));
 bOut.addEventListener('click', withdraw);
