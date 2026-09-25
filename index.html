@@ -583,6 +583,8 @@ const ENEMY = {
   cooler: { name: '冷却装置', role: '砲台の弱点', size: '全高 12 m', weapon: 'なし', hp: 160, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 500, model: modelCooler(), yc: 4, scale: 1.5, fixed: true, guard: true },
   dread: { name: 'BX-5 グラナート級戦艦', role: '宇宙戦艦', size: '全長 320 m', weapon: '主砲・砲塔×4・艦載機', hp: 1100, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 4.5, boss: true, fixed: true, core: true, shielded: true, megaDmg: 26 },
   turret: { name: '艦載砲塔', role: '戦艦の砲塔', size: '全高 14 m', weapon: '連装砲', hp: 180, speed: 0, dmg: 8, fireCd: 4.5, range: 1500, prefers: 'far', score: 600, model: modelTurret(), yc: 3, scale: 1.5, fixed: true, guard: true },
+  shieldgen: { name: '防御ジェネレーター', role: 'コアの防御装置', size: '全高 14 m', weapon: 'なし', hp: 220, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 700, model: modelCooler(), yc: 4, scale: 1.8, fixed: true, guard: true },
+  fcore: { name: 'MX-0 要塞コア', role: '月面要塞中枢', size: '直径 90 m', weapon: '中枢主砲・防衛機', hp: 1500, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 8000, model: modelFortress(), yc: 0, scale: 2.2, boss: true, fixed: true, core: true, shielded: true, art: 'fort', megaDmg: 34 },
   fort:  { name: 'FX-9 ハイヴ', role: '宇宙要塞', size: '全幅 100 m', weapon: '砲台×4・艦載機', hp: 1200, speed: 0.15, dmg: 9, fireCd: 3.0, volley: 4, range: 1200, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 1.5, boss: true, spawns: true }
 };
 for (const T of Object.values(ENEMY)) T.rad = Math.max(...T.model.v.map(v => Math.hypot(v[0], v[1] - T.yc, v[2])));
@@ -591,7 +593,9 @@ const STAGES = [
   { kind: 'space', name: '宇宙戦域', waves: 3, boss: 'fort', pools: [['vespa', 'garm'], ['vespa', 'garm', 'hawk'], ['vespa', 'hawk', 'garm', 'vespa']] },
   { kind: 'ground', name: '巨大兵器破壊', waves: 0, mission: 'weapon', time: 180, guardName: '冷却装置', chargeRate: [5, 3.5], escorts: ['garm', 'hawk'], escortT: 11, escortMax: 3 },
   { kind: 'space', name: '戦艦撃破', waves: 0, mission: 'ship', guardName: '砲塔', chargeRate: [4, 4], escorts: ['vespa', 'garm'], escortT: 12, escortMax: 4, carrier: true },
-  { kind: 'space', name: '月面要塞へ', waves: 0, mission: 'moon', clearText: '月面要塞に到達' }
+  { kind: 'space', name: '月面要塞へ', waves: 0, mission: 'moon', clearText: '月面要塞に到達' },
+  { kind: 'indoor', name: '要塞侵入', waves: 0, mission: 'fortress', sections: 3, guardName: '防御ジェネレーター', chargeRate: [4.5, 3.5],
+    escorts: ['garm', 'vespa'], escortT: 12, escortMax: 3, clearText: '月面要塞 陥落 — ALL MISSIONS COMPLETE' }
 ];
 const PARTS = ['左脚', '右脚', '左腕', '頭部', '右腕'];
 
@@ -718,7 +722,7 @@ function pickDesired(T) {
   const band = Math.random() < 0.55 ? T.prefers : ['near', 'mid', 'far'][Math.floor(Math.random() * 3)];
   return band === 'near' ? rnd(60, 120) : band === 'mid' ? rnd(220, 420) : rnd(600, 1000);
 }
-function elRange() { return stage().kind === 'ground' ? [2, 22] : [-40, 50]; }
+function elRange() { const k = stage().kind; return k === 'ground' ? [2, 22] : k === 'indoor' ? [-6, 14] : [-40, 50]; }
 function spawn(key, near) {
   const T = ENEMY[key], er = elRange();
   const k = T.boss ? 1 + 0.35 * game.loop : 1 + 0.12 * (game.gw - 1) + 0.3 * game.loop;
@@ -754,6 +758,7 @@ function startWave() {
 //  weapon: giant cannon + 2 coolant tanks, 3 minute limit   ship: battleship + 4 turrets that fire, launches fighters
 function startMission(st) {
   if (st.mission === 'moon') { briefMoon(); return; }
+  if (st.mission === 'fortress') { startFortress(st); return; }
   game.mission = { kind: st.mission, time: st.time ? st.time * (1 - 0.1 * Math.min(game.loop, 3)) : null, charge: 0, escortT: 6, done: false, armorMsgT: 0 };
   const az = (view.h + rnd(-50, 50) + 360) % 360;
   const place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0, mode: 'assault' });
@@ -776,6 +781,7 @@ function updateMission(dt) {
   const M = game.mission, st = stage();
   if (!M || M.done) return;
   if (M.kind === 'moon') { updateMoon(dt); return; }
+  if (M.kind === 'fortress' && M.phase !== 'core') { updateFortress(dt); return; }
   M.armorMsgT -= dt;
   if (M.time != null) { M.time -= dt; if (M.time <= 0) { missionFailed('制限時間切れ。目標の破壊に失敗しました。'); return; } }
   const core = game.enemies.find(e => e.T.core), guards = game.enemies.filter(e => e.T.guard).length;
@@ -787,7 +793,8 @@ function updateMission(dt) {
   if (M.escortT <= 0) {
     M.escortT = st.escortT;
     if (game.enemies.filter(e => !e.T.fixed).length < st.escortMax) {
-      spawn(st.escorts[Math.floor(Math.random() * st.escorts.length)], st.carrier ? core : undefined);
+      if (st.kind === 'indoor') spawnIndoor(st.escorts[Math.floor(Math.random() * st.escorts.length)]);
+      else spawn(st.escorts[Math.floor(Math.random() * st.escorts.length)], st.carrier ? core : undefined);
       if (st.carrier) say('戦艦から艦載機が発進。');
     }
   }
@@ -893,6 +900,89 @@ function drawMoon() {
   }
   ctx.restore();
 }
+// Fortress infiltration: corridor sections guarded by defenders and wall turrets; clearing a section opens the
+// bulkhead and the unit advances; the last room holds the core shielded by generators (generic core logic).
+const CORRIDOR = { hw: 130, fl: -45, ce: 110, gap: 90, bulk: 600 };
+function spawnIndoor(key, dist) { // inside the corridor, ahead of the pilot
+  const M = game.mission, e = spawn(key, { az: M.az0 + rnd(-18, 18), el: rnd(-3, 8), dist: dist || rnd(280, 560) });
+  e.mode = 'assault'; return e;
+}
+function startFortress(st) {
+  game.mission = { kind: 'fortress', az0: view.h, sec: 0, phase: 'fight', advT: 0, travel: 0, bs: CORRIDOR.bulk, lift: 0, time: null, charge: 0, escortT: 8, done: false, armorMsgT: 0 };
+  startSection(0);
+}
+function placeFixed(key, daz, el, dist) {
+  const M = game.mission;
+  return Object.assign(spawn(key), { az: (M.az0 + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0, mode: 'assault' });
+}
+function startSection(i) {
+  const M = game.mission, pool = ['garm', 'vespa', 'hawk'];
+  M.sec = i; M.phase = 'fight'; M.bs = CORRIDOR.bulk; M.lift = 0;
+  for (let k = 0; k < 3 + i + game.loop; k++) spawnIndoor(pool[Math.floor(Math.random() * pool.length)]);
+  for (const s of [-1, 1]) { const t = placeFixed('turret', s * 24, 6, 300); t.fireCd = rnd(2, 5); }
+  game.announce = { text: `区画 ${i + 1}/${stage().sections}　防衛部隊を排除せよ`, t: 2.6, col: BANDC.mid };
+  say('防衛機と壁面砲台をすべて撃破すると、隔壁が開きます。');
+  SFX.alarm();
+}
+function startCore() {
+  const M = game.mission;
+  M.phase = 'core'; M.bs = CORRIDOR.bulk; M.lift = 0; M.charge = 0; M.escortT = 8;
+  placeFixed('fcore', 0, 5, 460);
+  for (const [daz, el] of [[-11, 0], [11, 0], [0, 12]]) placeFixed('shieldgen', daz, el, 420);
+  spawnIndoor('garm'); spawnIndoor('vespa');
+  game.announce = { text: '最深部　要塞コアを破壊せよ', t: 3.0, col: BANDC.near };
+  say('防御ジェネレーター3基を破壊すると、コアの装甲が弱まります。主砲に注意。');
+  SFX.alarm();
+}
+function updateFortress(dt) {
+  const M = game.mission, st = stage();
+  if (M.phase === 'fight') {
+    if (game.enemies.length === 0) { M.phase = 'advance'; M.advT = 0; game.announce = { text: '隔壁開放　前進', t: 2.0, col: BANDC.far }; SFX.clear(); }
+    return;
+  }
+  // advance: the bulkhead lifts, then the unit moves up the corridor to the next section
+  M.advT += dt;
+  M.lift = Math.min(1, M.advT / 1.2);
+  if (M.advT > 1.2) { const v = 360 * dt; M.travel += v; M.bs -= v; if (!reduceMotion) game.shake = Math.max(game.shake, 0.15); }
+  if (M.advT > 3.2) { if (M.sec + 1 < st.sections) startSection(M.sec + 1); else startCore(); }
+}
+function seg3(a, b) { // world segment clipped to the near plane
+  let za = dot(a, B.f), zb = dot(b, B.f);
+  if (za < 1.01 && zb < 1.01) return;
+  if (za < 1.01) { const t = (1.01 - za) / (zb - za); a = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+  else if (zb < 1.01) { const t = (1.01 - zb) / (za - zb); b = [b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t, b[2] + (a[2] - b[2]) * t]; }
+  const pa = projP(a), pb = projP(b);
+  if (pa && pb) { ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); }
+}
+function drawCorridor() {
+  const M = game.mission, az0 = M && M.az0 != null ? M.az0 : view.h, C = CORRIDOR;
+  const d = dirv(az0, 0), r = [d[1], -d[0], 0], P = (s, x, z) => [d[0] * s + r[0] * x, d[1] * s + r[1] * x, z];
+  ctx.fillStyle = '#020806'; ctx.fillRect(0, 0, W, H);
+  const tr = M ? M.travel : 0;
+  ctx.lineWidth = 1;
+  for (let k = -8; k <= 18; k++) { // ribs
+    const sd = k * C.gap - (tr % C.gap), a = clamp(1 - Math.abs(sd) / 1600, 0.12, 0.75);
+    ctx.strokeStyle = `rgba(61,255,122,${a.toFixed(3)})`; ctx.beginPath();
+    const q = [P(sd, -C.hw, C.fl), P(sd, C.hw, C.fl), P(sd, C.hw, C.ce), P(sd, -C.hw, C.ce)];
+    for (let i = 0; i < 4; i++) seg3(q[i], q[(i + 1) % 4]);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(61,255,122,.45)'; ctx.beginPath(); // long edges, floor rails, wall light strips
+  for (const [x, z] of [[-C.hw, C.fl], [C.hw, C.fl], [-C.hw, C.ce], [C.hw, C.ce], [-C.hw * 0.4, C.fl], [C.hw * 0.4, C.fl]]) seg3(P(-800, x, z), P(1700, x, z));
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(184,255,208,.6)'; ctx.beginPath();
+  for (const x of [-C.hw, C.hw]) seg3(P(-800, x, 25), P(1700, x, 25));
+  ctx.stroke();
+  if (M && M.bs > 20) { // bulkhead ahead (lifts when the section is cleared)
+    const lift = (M.lift || 0) * (C.ce - C.fl), z0 = C.fl + lift, q = [P(M.bs, -C.hw, z0), P(M.bs, C.hw, z0), P(M.bs, C.hw, C.ce), P(M.bs, -C.hw, C.ce)];
+    const pq = q.map(v => dot(v, B.f) > 1.01 ? projP(v) : null);
+    if (pq.every(Boolean) && z0 < C.ce - 1) {
+      ctx.fillStyle = 'rgba(10,40,24,.78)'; ctx.beginPath(); pq.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo'](p[0], p[1])); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = BANDC.mid; ctx.lineWidth = 2; ctx.stroke();
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(pq[0][0], pq[0][1]); ctx.lineTo(pq[2][0], pq[2][1]); ctx.moveTo(pq[1][0], pq[1][1]); ctx.lineTo(pq[3][0], pq[3][1]); ctx.stroke();
+    }
+  }
+}
 function megaShot(e) {
   e.flash = 0.8; game.shake = 1;
   game.fx.push({ type: 'incoming', e, t: 0, dur: 0.6 });
@@ -926,8 +1016,10 @@ function resetSortie() {
     enemies: [], fx: [], selected: null, locks: [], cd: { near: 0, mid: 0, far: 0 },
     dashT: 0, dashCd: 0, hitFlash: 0, shake: 0, nextWaveT: 0, announce: null, evade: null, quitT: 0, mission: null, fa: 0, faMax: 0 });
 }
+const DEBUG_STAGE = (() => { const n = parseInt(new URLSearchParams(location.search).get('stage'), 10); return n >= 1 ? n - 1 : null; })();
 function startGame() {
   resetSortie();
+  if (DEBUG_STAGE != null) { game.stageIdx = Math.min(DEBUG_STAGE, STAGES.length - 1); say(`デバッグ：ステージ${game.stageIdx + 1}（${stage().name}）から開始。`); }
   game.state = 'play';
   applyBackground();
   startWave();
@@ -1010,6 +1102,7 @@ function update(dt) {
     e.el += clamp(e.elT - e.el, -(e.mode === 'evade' ? 12 : 4) * dt, (e.mode === 'evade' ? 12 : 4) * dt);
     if (Math.abs(e.elT - e.el) < 0.5) e.elT = rnd(er[0], er[1]);
     e.el = clamp(e.el, er[0] - 1, er[1] + 1);
+    if (game.mission && game.mission.az0 != null) e.az = (game.mission.az0 + clamp(wrap180(e.az - game.mission.az0), -22, 22) + 360) % 360; // stay in the corridor
     }
     e.flash = Math.max(0, e.flash - dt); e.hurt = Math.max(0, e.hurt - dt);
     if (e.lockT > 0) { // locked on: fires when the lock completes unless the pilot breaks it by evading
@@ -1480,6 +1573,12 @@ function drawOverlayText() {
       ctx.fillStyle = M.aligned ? PHOS : BANDC.mid;
       ctx.fillText(`${M.aligned ? 'ブースト加速中' : '月へ機首を向けてください'}　${M.real ? '（実際の月の方向）' : '（仮の方向）'}`, 14, safeTop + 88);
       ctx.fillStyle = PHOS;
+    } else if (game.mission && !game.mission.done && game.mission.kind === 'fortress' && game.mission.phase !== 'core') {
+      const M = game.mission;
+      ctx.fillText(`${st.name}　区画 ${M.sec + 1}/${st.sections}`, 14, safeTop + 72);
+      ctx.fillStyle = M.phase === 'advance' ? BANDC.far : BANDC.mid;
+      ctx.fillText(M.phase === 'advance' ? '隔壁開放　前進中' : `残敵 ${game.enemies.length}`, 14, safeTop + 88);
+      ctx.fillStyle = PHOS;
     } else if (game.mission && !game.mission.done) {
       const M = game.mission, m = M.time != null ? Math.max(0, Math.ceil(M.time)) : null, guards = game.enemies.filter(e => e.T.guard).length;
       ctx.fillText(`${st.name}${m != null ? `　残り ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}` : ''}`, 14, safeTop + 72);
@@ -1714,8 +1813,8 @@ function say(t) { if (t) msg.textContent = t; }
 let bg = 'cg', camOK = false, mirror = false;
 const BGJ = { video: '映像', wire: '輪郭', cg: 'CG' };
 function applyBackground() {
-  const space = game.state !== 'idle' && stage().kind === 'space';
-  video.style.opacity = bg === 'video' && camOK && !space ? '1' : '0';
+  const outdoors = game.state === 'idle' || stage().kind === 'ground'; // camera only on the ground stages
+  video.style.opacity = bg === 'video' && camOK && outdoors ? '1' : '0';
   $('#bBg').textContent = `背景:${BGJ[bg]}`;
 }
 $('#bBg').addEventListener('click', () => {
@@ -1928,7 +2027,7 @@ function drawIdView(t, x, y, w, h, code) {
 // ================= loop =================
 let lastT = 0;
 function frame(t) {
-  const dt = Math.min(0.05, lastT ? (t - lastT) / 1000 : 0); lastT = t; nowS = t / 1000;
+  const dt = clamp(lastT ? (t - lastT) / 1000 : 0, 0, 0.05); lastT = t; // never negative, at most 50 ms nowS = t / 1000;
   cx = W / 2; cy = viewH() / 2; F = (Math.max(W, H) / 2) / Math.tan(33 * D);
   top = safeTop + 64; bottom = H - consoleBottom - 8;
   if (game.state === 'idle' && !reduceMotion) manYaw = (manYaw + 0.04) % 360;
@@ -1950,7 +2049,9 @@ function frame(t) {
   }
   const launching = game.state === 'launch';
   const space = !launching && game.state !== 'idle' && stage().kind === 'space';
+  const indoor = !launching && game.state !== 'idle' && stage().kind === 'indoor';
   if (launching) drawLaunch();
+  else if (indoor) { drawCorridor(); drawEnemies(); drawFx(); }
   else {
     if (space) { drawStars(); drawMoon(); }
     else if (bg === 'wire' && camOK && processWire()) {
