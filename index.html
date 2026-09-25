@@ -482,6 +482,8 @@ for (const [k, A] of Object.entries(UNIT_ART)) for (const [store, D] of [[unitAr
   im.onload = () => { store[k] = { front: cutView(im, D.front), side: cutView(im, D.side), back: cutView(im, D.back) }; };
   im.src = D.src;
 }
+const unitArtBst = {}; // booster-equipped unit (single 3/4 view, img/unit-<key>-bst.png) for the lunar run
+for (const k of Object.keys(UNIT_ART)) { const im = new Image(); im.onload = () => { unitArtBst[k] = im; }; im.src = `img/unit-${k}-bst.png`; }
 // full-armor art while the extra armor is fitted (relaunch for the lunar run, until purged)
 const ownArt = () => ((game.state === 'launch' && game.launch.equip) || game.fa > 0) && unitArtFA[game.key] || unitArt[game.key];
 // Enemy sprites (img/enemies.png): line art keyed to transparency, one hue x 8 levels, packed side by side
@@ -1570,6 +1572,15 @@ function drawMonitor() {
   c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
   const e = game.selected || game.locks[0];
   c.textBaseline = 'top'; c.textAlign = 'left';
+  const bstImg = game.state === 'play' && game.mission && game.mission.kind === 'moon' && unitArtBst[game.key];
+  if (!e && bstImg) { // lunar run: own unit in booster configuration
+    const k = Math.min(h * 0.86 / bstImg.height, w * 0.55 / bstImg.width), iw = bstImg.width * k, ih = bstImg.height * k;
+    c.globalAlpha = game.mission.aligned ? 1 : 0.55; c.drawImage(bstImg, w - iw - 6 * s, (h - ih) / 2, iw, ih); c.globalAlpha = 1;
+    c.fillStyle = game.mission.aligned ? PHOS : BANDC.mid; c.font = `600 ${12 * s}px ${FONT}`; c.fillText('BOOST MODE', 8 * s, 8 * s);
+    c.font = `400 ${10 * s}px ${FONT}`; c.fillStyle = DIM;
+    [game.m.call, game.mission.aligned ? '最大加速' : '月へ機首を', game.mission.aligned ? '' : '向けてください'].forEach((t, i) => c.fillText(t, 8 * s, (26 + i * 14) * s));
+    return;
+  }
   if (!e) {
     c.fillStyle = DIM; c.font = `600 ${11 * s}px ${FONT}`;
     const lines = game.state === 'play' ? ['目標未識別', '敵をタップすると', 'スペックを表示します']
@@ -1791,13 +1802,14 @@ function drawCheckView(t, x, y, w, h, code) {
   const mw = w * 0.4, mx = x + 8, my = y + 26, mh = h - 34, art = ownArt();
   ctx.strokeStyle = 'rgba(61,255,122,.25)'; ctx.lineWidth = 1; ctx.strokeRect(mx, my, mw, mh);
   // blueprint views in turn (front → side → back), each revealed by a scan line
-  const VIEWS = ['FRONT', 'SIDE', 'BACK'], u = Math.max(0, t - 0.3), vi = Math.min(2, Math.floor(u / 1.35)), vt = u - vi * 1.35;
+  const bst = game.launch.equip && unitArtBst[game.key], VIEWS = bst ? ['FRONT', 'SIDE', 'BACK', 'BOOSTER'] : ['FRONT', 'SIDE', 'BACK'];
+  const step = bst ? 1.0 : 1.35, u = Math.max(0, t - 0.3), vi = Math.min(VIEWS.length - 1, Math.floor(u / step)), vt = u - vi * step;
   if (art) {
-    const img = art[VIEWS[vi].toLowerCase()], ah = mh - 20, sc = Math.min(ah / img.height, (mw - 8) / img.width);
-    const iw = img.width * sc, ih = img.height * sc, ix = mx + (mw - iw) / 2, iy = my + 4, scanY = iy + ih * Math.min(1, vt / 0.9);
+    const img = VIEWS[vi] === 'BOOSTER' ? bst : art[VIEWS[vi].toLowerCase()], ah = mh - 20, sc = Math.min(ah / img.height, (mw - 8) / img.width);
+    const iw = img.width * sc, ih = img.height * sc, ix = mx + (mw - iw) / 2, iy = my + 4, scanY = iy + ih * Math.min(1, vt / Math.min(0.9, step * 0.8));
     ctx.save(); ctx.globalAlpha *= 0.22; ctx.drawImage(img, ix, iy, iw, ih); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(ix, iy, iw, scanY - iy); ctx.clip(); ctx.drawImage(img, ix, iy, iw, ih); ctx.restore();
-    if (vt < 0.9) { ctx.fillStyle = PHOS; ctx.fillRect(mx + 2, scanY - 1, mw - 4, 2); }
+    if (vt < Math.min(0.9, step * 0.8)) { ctx.fillStyle = PHOS; ctx.fillRect(mx + 2, scanY - 1, mw - 4, 2); }
   }
   ctx.fillStyle = PHOS; ctx.font = `600 10px ${FONT}`; ctx.textAlign = 'center';
   ctx.fillText(`${code}  ${VIEWS[vi]} VIEW`, mx + mw / 2, my + mh - 14);
@@ -1831,8 +1843,8 @@ function drawCheckView(t, x, y, w, h, code) {
 // model number, English name, pilot, then the countdown seen through the monitor
 function drawIdView(t, x, y, w, h, code) {
   const u = t - LAUNCH.id, shown = code.slice(0, Math.floor(Math.max(0, u) / 0.08)), art = ownArt();
-  if (art) { // front view faintly behind the text
-    const img = art.front, ih = h - 16, iw = img.width * ih / img.height;
+  if (art) { // front view (booster configuration on the lunar relaunch) faintly behind the text
+    const img = game.launch.equip && unitArtBst[game.key] || art.front, ih = h - 16, iw = img.width * ih / img.height;
     ctx.save(); ctx.globalAlpha *= Math.min(0.28, u * 0.5); ctx.drawImage(img, x + w - iw - 6, y + 8, iw, ih); ctx.restore();
   }
   ctx.textAlign = 'center'; ctx.fillStyle = '#c9ffd9'; ctx.font = `600 42px ${FONT}`;
