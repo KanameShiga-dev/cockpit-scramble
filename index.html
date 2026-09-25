@@ -464,21 +464,26 @@ function modelFortress() { // FX-9: ring fortress with core hangars and four tur
 // to one hue x 8 levels. Each sheet holds front / side / back side by side as [x, width] at 320 px tall.
 // Until loaded, or if loading fails, the vector damage figure and a text label are used instead.
 const UNIT_ART = {
-  zx: { src: 'img/unit-zx.png', front: [0, 205], side: [207, 152], back: [361, 201] },
-  sn: { src: 'img/unit-sn.png', front: [0, 192], side: [194, 144], back: [340, 188] },
-  hv: { src: 'img/unit-hv.png', front: [0, 223], side: [225, 164], back: [391, 213] }
+  zx: { src: 'img/unit-zx.png', front: [0, 205], side: [207, 152], back: [361, 201],
+    fa: { src: 'img/unit-zx-fa.png', front: [0, 193], side: [195, 133], back: [330, 179] } },
+  sn: { src: 'img/unit-sn.png', front: [0, 192], side: [194, 144], back: [340, 188],
+    fa: { src: 'img/unit-sn-fa.png', front: [0, 187], side: [189, 132], back: [323, 184] } },
+  hv: { src: 'img/unit-hv.png', front: [0, 223], side: [225, 164], back: [391, 213],
+    fa: { src: 'img/unit-hv-fa.png', front: [0, 193], side: [195, 128], back: [325, 187] } }
 };
-const unitArt = {};
+const unitArt = {}, unitArtFA = {}; // normal / full-armor three views per machine
 function cutView(im, [x, w]) {
   const c = document.createElement('canvas'); c.width = w; c.height = im.height;
   c.getContext('2d').drawImage(im, x, 0, w, im.height, 0, 0, w, im.height);
   return c;
 }
-for (const [k, A] of Object.entries(UNIT_ART)) {
+for (const [k, A] of Object.entries(UNIT_ART)) for (const [store, D] of [[unitArt, A], [unitArtFA, A.fa]]) {
   const im = new Image();
-  im.onload = () => { unitArt[k] = { front: cutView(im, A.front), side: cutView(im, A.side), back: cutView(im, A.back) }; };
-  im.src = A.src;
+  im.onload = () => { store[k] = { front: cutView(im, D.front), side: cutView(im, D.side), back: cutView(im, D.back) }; };
+  im.src = D.src;
 }
+// full-armor art while the extra armor is fitted (relaunch for the lunar run, until purged)
+const ownArt = () => ((game.state === 'launch' && game.launch.equip) || game.fa > 0) && unitArtFA[game.key] || unitArt[game.key];
 // Enemy sprites (img/enemies.png): line art keyed to transparency, one hue x 8 levels, packed side by side
 // as [x, y, w, h]. Enemies are drawn as billboards; the 3D models remain for debris and as the fallback.
 const ENEMY_SPRITES = { garm: [0, 0, 300, 162], vespa: [302, 0, 300, 196], hawk: [604, 0, 300, 193], titan: [906, 0, 300, 186], fort: [1208, 0, 300, 185] };
@@ -1534,7 +1539,7 @@ const FIGURES = {
 const DMG_ZONES = { 3: [0.36, 0, 0.28, 0.17], 4: [0, 0.12, 0.36, 0.62], 2: [0.64, 0.12, 0.36, 0.62], 1: [0.1, 0.55, 0.4, 0.45], 0: [0.5, 0.55, 0.4, 0.45] };
 const figCv = document.createElement('canvas');
 function drawDamage(c, x0, y0, s) {
-  const art = unitArt[game.key];
+  const art = ownArt();
   if (art) {
     const img = art.front, h = Math.round(46 * s), w = Math.round(h * img.width / img.height), g = figCv.getContext('2d');
     if (figCv.width !== w || figCv.height !== h) { figCv.width = w; figCv.height = h; }
@@ -1783,7 +1788,7 @@ function drawLaunchPanel() {
 }
 // left: own machine as a spinning wireframe, a scan line turns it solid; right: armament and condition lists
 function drawCheckView(t, x, y, w, h, code) {
-  const mw = w * 0.4, mx = x + 8, my = y + 26, mh = h - 34, art = unitArt[game.key];
+  const mw = w * 0.4, mx = x + 8, my = y + 26, mh = h - 34, art = ownArt();
   ctx.strokeStyle = 'rgba(61,255,122,.25)'; ctx.lineWidth = 1; ctx.strokeRect(mx, my, mw, mh);
   // blueprint views in turn (front → side → back), each revealed by a scan line
   const VIEWS = ['FRONT', 'SIDE', 'BACK'], u = Math.max(0, t - 0.3), vi = Math.min(2, Math.floor(u / 1.35)), vt = u - vi * 1.35;
@@ -1825,7 +1830,7 @@ function drawCheckView(t, x, y, w, h, code) {
 }
 // model number, English name, pilot, then the countdown seen through the monitor
 function drawIdView(t, x, y, w, h, code) {
-  const u = t - LAUNCH.id, shown = code.slice(0, Math.floor(Math.max(0, u) / 0.08)), art = unitArt[game.key];
+  const u = t - LAUNCH.id, shown = code.slice(0, Math.floor(Math.max(0, u) / 0.08)), art = ownArt();
   if (art) { // front view faintly behind the text
     const img = art.front, ih = h - 16, iw = img.width * ih / img.height;
     ctx.save(); ctx.globalAlpha *= Math.min(0.28, u * 0.5); ctx.drawImage(img, x + w - iw - 6, y + 8, iw, ih); ctx.restore();
