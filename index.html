@@ -489,10 +489,10 @@ const enemyArt = {};
     const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, x, y, w, h, 0, 0, w, h); enemyArt[k] = c; } };
   im.src = 'img/enemies.png';
 }
-{ // battleship: its own sheet (img/dread.png)
+for (const k of ['dread', 'colossus']) { // bosses with their own image (img/<key>.png)
   const im = new Image();
-  im.onload = () => { enemyArt.dread = im; };
-  im.src = 'img/dread.png';
+  im.onload = () => { enemyArt[k] = im; };
+  im.src = `img/${k}.png`;
 }
 
 // ================= data =================
@@ -516,7 +516,7 @@ const ENEMY = {
   vespa: { name: 'VX-3 ヴェスパ', role: '高機動型', size: '全高 17.6 m', weapon: 'ビームクロー', hp: 40, speed: 1.8, dmg: 9, fireCd: 2.2, range: 180, prefers: 'near', score: 150, model: modelFast(), yc: 9, scale: 1.5 },
   hawk:  { name: 'HK-9 ホーク', role: '砲撃型', size: '全高 21.0 m', weapon: '長距離砲', hp: 120, speed: 0.6, dmg: 12, fireCd: 4.6, range: 1200, prefers: 'far', score: 250, model: modelHeavy(), yc: 9, scale: 1.5 },
   titan: { name: 'TX-0 タイタン', role: '大型陸戦機', size: '全高 63 m', weapon: '大口径ビーム砲×3', hp: 700, speed: 0.35, dmg: 11, fireCd: 3.4, volley: 3, range: 1200, prefers: 'mid', score: 3000, model: modelTitan(), yc: 7, scale: 4.5, boss: true },
-  colossus: { name: 'GX-1 ゴライアス砲', role: '巨大砲台', size: '全高 80 m', weapon: '大口径荷電粒子砲', hp: 900, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 4000, model: modelTitan(), yc: 7, scale: 6, boss: true, fixed: true, core: true, shielded: true, art: 'titan', megaDmg: 30 },
+  colossus: { name: 'GX-1 ゴライアス砲', role: '巨大砲台', size: '全高 80 m', weapon: '大口径荷電粒子砲', hp: 900, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 4000, model: modelTitan(), yc: 7, scale: 9, boss: true, fixed: true, core: true, shielded: true, megaDmg: 30 },
   cooler: { name: '冷却装置', role: '砲台の弱点', size: '全高 12 m', weapon: 'なし', hp: 160, speed: 0, dmg: 0, fireCd: 999, range: 0, prefers: 'far', score: 500, model: modelCooler(), yc: 4, scale: 1.5, fixed: true, guard: true },
   dread: { name: 'BX-5 グラナート級戦艦', role: '宇宙戦艦', size: '全長 320 m', weapon: '主砲・砲塔×4・艦載機', hp: 1100, speed: 0, dmg: 0, fireCd: 999, range: 1500, prefers: 'far', score: 5000, model: modelFortress(), yc: 0, scale: 4.5, boss: true, fixed: true, core: true, shielded: true, megaDmg: 26 },
   turret: { name: '艦載砲塔', role: '戦艦の砲塔', size: '全高 14 m', weapon: '連装砲', hp: 180, speed: 0, dmg: 8, fireCd: 4.5, range: 1500, prefers: 'far', score: 600, model: modelTurret(), yc: 3, scale: 1.5, fixed: true, guard: true },
@@ -696,7 +696,7 @@ function startMission(st) {
   const place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0, mode: 'assault' });
   if (st.mission === 'weapon') {
     place(spawn('colossus'), 0, 7, 720);
-    place(spawn('cooler'), -5, 2.5, 650); place(spawn('cooler'), 5, 2.5, 650);
+    place(spawn('cooler'), -7.5, 1.5, 650); place(spawn('cooler'), 7.5, 1.5, 650);
     spawn('garm'); spawn('garm');
     game.announce = { text: '作戦目標：巨大砲台の破壊', t: 3.2, col: BANDC.near };
     say('冷却装置2基を破壊すると、巨大砲台の装甲が弱まります。主砲の発射前に回避を。');
