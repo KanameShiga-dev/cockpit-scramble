@@ -106,6 +106,17 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
 #title h1{margin:0;font-size:clamp(40px,9vw,92px);font-weight:600;letter-spacing:.04em;line-height:1;color:var(--phos);text-shadow:0 0 18px rgba(61,255,122,.7),0 0 2px #fff}
 #title .sub{margin:8px 0 20px;font-size:12px;letter-spacing:.32em;color:var(--phos-dim)}
 #bStart{padding:12px 40px;font-size:16px;font-weight:600;letter-spacing:.24em;background:var(--phos);color:#001a08;border-color:var(--phos)}
+.mc .ty{font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--mid);margin-left:4px}
+#title .last{margin:0 0 12px;font-size:13px;color:#e8fff0;text-shadow:0 0 6px #000}
+#ending{position:fixed;inset:0;z-index:21;background:#01070a;touch-action:auto}
+#ending[hidden]{display:none}
+#endCv{position:absolute;inset:0;width:100%;height:100%;display:block}
+#ending .ebox{position:absolute;left:6%;top:50%;transform:translateY(-50%);max-width:min(30rem,58%)}
+#ending .sub{margin:0 0 6px;font-size:12px;letter-spacing:.3em;color:var(--mid)}
+#ending h1{margin:0 0 16px;font-size:clamp(30px,6vw,56px);font-weight:700;color:var(--phos);text-shadow:0 0 16px rgba(61,255,122,.7)}
+#ending dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0 0 20px;font-size:14px}
+#ending dt{color:var(--phos-dim)} #ending dd{margin:0;color:#e8fff0;font-variant-numeric:tabular-nums}
+#bEndOk{padding:12px 34px;font-size:15px;font-weight:600;letter-spacing:.12em;background:var(--phos);color:#001a08;border-color:var(--phos)}
 #bBoot{width:100%;padding:12px;font-size:15px;font-weight:600;background:var(--phos);color:#001a08;border-color:var(--phos)}
 </style>
 </head>
@@ -142,7 +153,17 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
   <div class="tbox">
     <h1 id="ttl">MoonBase</h1>
     <p class="sub">360° COCKPIT ACTION</p>
+    <p class="last" id="lastResult" hidden></p>
     <button id="bStart">START</button>
+  </div>
+</div>
+<div id="ending" hidden role="dialog" aria-modal="true" aria-labelledby="endTitle">
+  <canvas id="endCv" aria-hidden="true"></canvas>
+  <div class="ebox">
+    <p class="sub">ALL MISSIONS COMPLETE</p>
+    <h1 id="endTitle">月面要塞 陥落</h1>
+    <dl id="endStats"></dl>
+    <button id="bEndOk">タイトルへ</button>
   </div>
 </div>
 <div id="geo" hidden role="dialog" aria-modal="true" aria-labelledby="geoTitle">
@@ -162,6 +183,8 @@ button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
     <div class="machines" role="radiogroup" aria-label="機体" id="machines"></div>
     <div class="opt"><span class="lbl">旋回感度</span>
       <div class="segs" role="radiogroup" aria-label="旋回感度" id="gains"></div></div>
+    <div class="opt"><span class="lbl">難易度</span>
+      <div class="segs" role="radiogroup" aria-label="難易度" id="diffs"></div></div>
     <div class="opt"><label class="lbl" for="pilot">パイロット名</label>
       <input id="pilot" maxlength="12" autocomplete="nickname" spellcheck="false" placeholder="例：KANAME" aria-describedby="pilotMsg"></div>
     <p id="pilotMsg" class="note">出撃シーンに表示されます（12文字まで）。この端末に保存され、次回も使えます。</p>
@@ -563,18 +586,18 @@ for (const k of ['dread', 'colossus']) { // bosses with their own image (img/<ke
 // ================= data =================
 const VULCAN = { name: 'バルカン', dmg: 4, cd: 0.14, fx: 'bullet', en: 0 };
 const MACHINES = {
-  zx: { name: 'ZX-01 エアロウィング', call: 'AEROWING', desc: '可変の万能機。どの距離でも戦える。', armor: 100, lockMax: 3, evade: { kind: 'roll', cd: 4 },
+  zx: { name: 'ZX-01 エアロウィング', call: 'AEROWING', type: 'TYPE-A BALANCE', desc: 'バランス型。どの距離でも安定して戦える。', armor: 110, lockMax: 3, evade: { kind: 'roll', cd: 4 },
     near: { name: 'ビームサーベル', label: 'BEAM SABER', dmg: 60, cd: 0.9, fx: 'slash', en: 0 },
     mid:  { name: 'ビームライフル', label: 'BEAM RIFLE', dmg: 26, cd: 0.7, fx: 'beam', en: 8 },
     far:  { name: 'ロングビームキャノン', label: 'LONG BEAM CANNON', dmg: 55, cd: 2.6, fx: 'cannon', en: 26 } },
-  hv: { name: 'HV-02 バスティオン', call: 'BASTION', desc: '重装甲の砲撃機。多数を同時に捕捉、格闘は鈍重。', armor: 160, lockMax: 4, evade: { kind: 'back', cd: 6 },
-    near: { name: 'ヒートアックス', label: 'HEAT AXE', dmg: 70, cd: 1.6, fx: 'slash', en: 0 },
-    mid:  { name: 'ガトリング', label: 'GATLING GUN', dmg: 9, cd: 0.16, fx: 'bullet', en: 1.6 },
-    far:  { name: 'ツインキャノン', label: 'TWIN CANNON', dmg: 85, cd: 3.2, fx: 'cannon', en: 30 } },
-  sn: { name: 'SN-03 ニードル', call: 'NEEDLE', desc: '装甲は薄いが、単一目標を遠くから確実に落とす。', armor: 70, lockMax: 1, evade: { kind: 'fwd', cd: 3 },
-    near: { name: 'ビームナイフ', label: 'BEAM KNIFE', dmg: 38, cd: 0.45, fx: 'slash', en: 0 },
-    mid:  { name: 'ビームSMG', label: 'BEAM SMG', dmg: 12, cd: 0.22, fx: 'bullet', en: 2.5 },
-    far:  { name: 'ロングレールガン', label: 'LONG RAIL GUN', dmg: 95, cd: 2.1, fx: 'rail', en: 24 } }
+  hv: { name: 'HV-02 バスティオン', call: 'BASTION', type: 'TYPE-C POWER', desc: 'パワー型。重装甲と大火力で押し切る。多数を同時に捕捉、動きは重い。', armor: 170, lockMax: 4, evade: { kind: 'back', cd: 6 },
+    near: { name: 'ヒートアックス', label: 'HEAT AXE', dmg: 80, cd: 1.6, fx: 'slash', en: 0 },
+    mid:  { name: 'ガトリング', label: 'GATLING GUN', dmg: 10, cd: 0.16, fx: 'bullet', en: 1.6 },
+    far:  { name: 'ツインキャノン', label: 'TWIN CANNON', dmg: 95, cd: 3.0, fx: 'cannon', en: 30 } },
+  sn: { name: 'SN-03 ニードル', call: 'NEEDLE', type: 'TYPE-B SPEED', desc: 'スピード型。回避をすぐ使え、手数の多い攻撃で翻弄する。装甲は薄い。', armor: 80, lockMax: 2, evade: { kind: 'fwd', cd: 2.5 },
+    near: { name: 'ビームダガー', label: 'BEAM DAGGER', dmg: 32, cd: 0.3, fx: 'slash', en: 0 },
+    mid:  { name: '連装ビームSMG', label: 'TWIN BEAM SMG', dmg: 11, cd: 0.14, fx: 'bullet', en: 1.8 },
+    far:  { name: 'ビームライフル', label: 'BEAM RIFLE', dmg: 36, cd: 1.1, fx: 'beam', en: 10 } }
 };
 const ENEMY = {
   garm:  { name: 'GR-7 ガルム', role: '量産型', size: '全高 18.2 m', weapon: 'マシンガン', hp: 60, speed: 1, dmg: 5, fireCd: 2.6, range: 800, prefers: 'mid', score: 100, model: modelGrunt(), yc: 9, scale: 1.5 },
@@ -600,6 +623,15 @@ const STAGES = [
     escorts: ['garm', 'vespa'], escortT: 12, escortMax: 3, clearText: '月面要塞 陥落 — ALL MISSIONS COMPLETE' }
 ];
 const PARTS = ['左脚', '右脚', '左腕', '頭部', '右腕'];
+// difficulty: enemy durability, damage taken, lock-on warning length, enemy fire interval, enemy count, time limits
+const DIFFS = {
+  easy:   { label: 'EASY',   hp: 0.7,  dmg: 0.6, lock: 1.45, fire: 1.3, count: -1, time: 1.3 },
+  normal: { label: 'NORMAL', hp: 1,    dmg: 1,   lock: 1,    fire: 1,   count: 0,  time: 1 },
+  hard:   { label: 'HARD',   hp: 1.35, dmg: 1.4, lock: 0.75, fire: 0.8, count: 1,  time: 0.8 }
+};
+let diff = 'normal';
+try { const d = localStorage.getItem('cockpitScramble.diff'); if (DIFFS[d]) diff = d; } catch (e) {}
+const DF = () => DIFFS[diff];
 
 // ================= dom / canvas =================
 const video = $('#cam'), hud = $('#hud'), ctx = hud.getContext('2d');
@@ -730,7 +762,7 @@ function spawn(key, near) {
   const k = T.boss ? 1 + 0.35 * game.loop : 1 + 0.12 * (game.gw - 1) + 0.3 * game.loop;
   const az = near != null ? (near.az + rnd(-15, 15) + 360) % 360 : (view.h + rnd(-150, 150) + 360) % 360;
   const e = { key, T, az, el: near != null ? near.el : rnd(er[0], Math.min(er[1], 18)), dist: near != null ? near.dist : T.boss ? 1000 : rnd(700, 1100),
-    hp: T.hp * k, desired: pickDesired(T), bandTimer: rnd(4, 8), strafe: Math.random() < .5 ? -1 : 1,
+    hp: T.hp * k * DF().hp, desired: pickDesired(T), bandTimer: rnd(4, 8), strafe: Math.random() < .5 ? -1 : 1,
     elT: rnd(er[0], er[1]), fireCd: rnd(2, 4), phase: Math.random() * 6.28, flash: 0, hurt: 0, knock: null,
     mode: !T.boss && game.gw >= 2 && Math.random() < 0.3 ? 'ambush' : 'assault', modeT: 0, ambOff: rnd(-40, 40), spawnT: 12 };
   e.hpMax = e.hp;
@@ -749,7 +781,7 @@ function startWave() {
     SFX.alarm();
   } else {
     const pool = st.pools[Math.min(game.waveInStage - 1, st.pools.length - 1)];
-    const n = Math.min(2 + game.waveInStage + game.stageIdx + game.loop * 2, 8);
+    const n = clamp(2 + game.waveInStage + game.stageIdx + game.loop * 2 + DF().count, 1, 8);
     for (let i = 0; i < n; i++) spawn(pool[Math.floor(Math.random() * pool.length)]);
     game.announce = { text: `${st.name}　第${game.waveInStage}波`, t: 2.2 };
   }
@@ -761,7 +793,7 @@ function startWave() {
 function startMission(st) {
   if (st.mission === 'moon') { briefMoon(); return; }
   if (st.mission === 'fortress') { startFortress(st); return; }
-  game.mission = { kind: st.mission, time: st.time ? st.time * (1 - 0.1 * Math.min(game.loop, 3)) : null, charge: 0, escortT: 6, done: false, armorMsgT: 0 };
+  game.mission = { kind: st.mission, time: st.time ? st.time * DF().time * (1 - 0.1 * Math.min(game.loop, 3)) : null, charge: 0, escortT: 6, done: false, armorMsgT: 0 };
   const az = (view.h + rnd(-50, 50) + 360) % 360;
   const place = (e, daz, el, dist) => Object.assign(e, { az: (az + daz + 360) % 360, el, elT: el, dist, desired: dist, strafe: 0, mode: 'assault' });
   if (st.mission === 'weapon') {
@@ -789,7 +821,7 @@ function updateMission(dt) {
   const core = game.enemies.find(e => e.T.core), guards = game.enemies.filter(e => e.T.guard).length;
   if (core && !(core.lockT > 0)) { // lockT is unset until the first lock
     M.charge += dt * (guards ? st.chargeRate[0] : st.chargeRate[1]) * (1 + 0.15 * game.loop);
-    if (M.charge >= 100) { M.charge = 0; core.lockT = core.lockMax = 2.0; core.mega = true; SFX.lockon(); game.announce = { text: `${core.T.name}　主砲発射態勢`, t: 2.0, col: BANDC.near }; }
+    if (M.charge >= 100) { M.charge = 0; core.lockT = core.lockMax = 2.0 * DF().lock; core.mega = true; SFX.lockon(); game.announce = { text: `${core.T.name}　主砲発射態勢`, t: 2.0, col: BANDC.near }; }
   }
   M.escortT -= dt;
   if (M.escortT <= 0) {
@@ -920,7 +952,7 @@ function placeFixed(key, daz, el, dist) {
 function startSection(i) {
   const M = game.mission, pool = ['garm', 'vespa', 'hawk'];
   M.sec = i; M.phase = 'fight'; M.bs = CORRIDOR.bulk; M.lift = 0;
-  for (let k = 0; k < 3 + i + game.loop; k++) spawnIndoor(pool[Math.floor(Math.random() * pool.length)]);
+  for (let k = 0; k < Math.max(2, 3 + i + game.loop + DF().count); k++) spawnIndoor(pool[Math.floor(Math.random() * pool.length)]);
   for (const s of [-1, 1]) { const t = placeFixed('turret', s * 24, 6, 300); t.fireCd = rnd(2, 5); }
   game.announce = { text: `区画 ${i + 1}/${stage().sections}　防衛部隊を排除せよ`, t: 2.6, col: BANDC.mid };
   say('防衛機と壁面砲台をすべて撃破すると、隔壁が開きます。');
@@ -989,23 +1021,25 @@ function megaShot(e) {
   e.flash = 0.8; game.shake = 1;
   game.fx.push({ type: 'incoming', e, t: 0, dur: 0.6 });
   SFX.cannon();
-  damagePlayer(e.T.megaDmg * (1 + 0.2 * game.loop));
+  damagePlayer(e.T.megaDmg * (1 + 0.2 * game.loop) * DF().dmg);
   say(`${e.T.name}の主砲が直撃。`);
 }
 function missionFailed(why) {
   game.state = 'over'; game.locks = []; game.selected = null; game.evade = null;
   SFX.boom(true);
-  $('#bootTitle').textContent = '作戦失敗';
-  $('#bootText').textContent = `${stage().name}：${why} スコア ${game.score}。機体を選んで再出撃できます。`;
-  $('#bBoot').textContent = '再出撃';
-  setTimeout(() => { $('#boot').hidden = false; }, 900);
+  say(why);
+  setTimeout(() => toTitle(`前回：作戦失敗（${stage().name}）スコア ${game.score}`), 1400);
 }
 function stageClear() {
   game.mission = null;
   game.announce = { text: stage().clearText || `${stage().name} 制圧`, t: 2.6 };
   SFX.clear();
+  if (game.stageIdx >= STAGES.length - 1) { // campaign complete: ending, then back to the title (no second lap)
+    game.state = 'ending'; game.locks = []; game.selected = null;
+    setTimeout(showEnding, 2800);
+    return;
+  }
   game.stageIdx++;
-  if (game.stageIdx >= STAGES.length) { game.stageIdx = 0; game.loop++; game.fa = game.faMax = 0; } // full armor lasts one lap
   game.waveInStage = 0; game.fuel = 100;
   game.armor = Math.min(game.armorMax, game.armor + game.armorMax * 0.25);
   applyBackground();
@@ -1021,6 +1055,7 @@ function resetSortie() {
 const DEBUG_STAGE = (() => { const n = parseInt(new URLSearchParams(location.search).get('stage'), 10); return n >= 1 ? n - 1 : null; })();
 function startGame() {
   resetSortie();
+  game.startT = performance.now() / 1000;
   if (DEBUG_STAGE != null) { game.stageIdx = Math.min(DEBUG_STAGE, STAGES.length - 1); say(`デバッグ：ステージ${game.stageIdx + 1}（${stage().name}）から開始。`); }
   game.state = 'play';
   applyBackground();
@@ -1030,10 +1065,46 @@ function startGame() {
 function gameOver() {
   game.state = 'over'; game.locks = []; game.selected = null;
   SFX.boom(true);
-  $('#bootTitle').textContent = '撃墜されました';
-  $('#bootText').textContent = `${stage().name}${game.loop ? `（${game.loop + 1}周目）` : ''}・第${game.gw}波まで到達、スコア ${game.score}。機体を選んで再出撃できます。`;
-  $('#bBoot').textContent = '再出撃';
-  setTimeout(() => { $('#boot').hidden = false; }, 900);
+  setTimeout(() => toTitle(`前回：撃墜（${stage().name}）スコア ${game.score}`), 1400);
+}
+// back to the title screen after a run; the sortie screen returns to its defaults
+const BOOT_DEFAULT = { title: '機体選択', text: '' };
+function toTitle(result) {
+  game.state = 'idle'; game.enemies = []; game.locks = []; game.selected = null; game.mission = null; game.evade = null; game.fa = game.faMax = 0;
+  $('#bootTitle').textContent = BOOT_DEFAULT.title; $('#bootText').textContent = BOOT_DEFAULT.text; $('#bBoot').textContent = '出撃';
+  $('#boot').hidden = false; $('#ending').hidden = true; $('#geo').hidden = true;
+  const r = $('#lastResult'); r.textContent = result || ''; r.hidden = !result;
+  $('#title').hidden = false; drawTitle(); $('#bStart').focus();
+  applyBackground();
+}
+function showEnding() {
+  const secs = Math.round(performance.now() / 1000 - game.startT), rows = [
+    ['パイロット', game.pilot], ['機体', `${game.m.name}（${game.m.type}）`], ['難易度', DF().label],
+    ['スコア', String(game.score)], ['残り装甲', `${Math.max(0, Math.round(game.armor))} / ${game.armorMax}`],
+    ['所要時間', `${Math.floor(secs / 60)}分${String(secs % 60).padStart(2, '0')}秒`]];
+  $('#endStats').innerHTML = '';
+  for (const [k, v] of rows) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; $('#endStats').append(dt, dd); }
+  $('#ending').hidden = false; drawEnding(); $('#bEndOk').focus();
+  SFX.clear(); setTimeout(() => SFX.green(), 700);
+}
+function drawEnding() {
+  const el = $('#ending'), cv = $('#endCv');
+  if (el.hidden) return;
+  const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.max(1, r.width), h = Math.max(1, r.height);
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = '#01070a'; c.fillRect(0, 0, w, h);
+  for (let i = 0; i < 140; i++) { const x = (i * 97.13) % w, y = (i * 53.71) % h; c.fillStyle = `rgba(200,255,220,${(0.2 + (i % 5) * 0.12).toFixed(2)})`; c.fillRect(x, y, i % 9 ? 1 : 2, i % 9 ? 1 : 2); }
+  const mr = Math.min(w, h) * 0.2, mx = w * 0.78, my = h * 0.28; // the moon, taken
+  const gl = c.createRadialGradient(mx, my, mr * 0.8, mx, my, mr * 2); gl.addColorStop(0, 'rgba(210,255,225,.3)'); gl.addColorStop(1, 'rgba(210,255,225,0)');
+  c.fillStyle = gl; c.beginPath(); c.arc(mx, my, mr * 2, 0, Math.PI * 2); c.fill();
+  const gr = c.createRadialGradient(mx - mr * .3, my - mr * .3, mr * .1, mx, my, mr); gr.addColorStop(0, '#f2fff6'); gr.addColorStop(1, '#8fcfa6');
+  c.fillStyle = gr; c.beginPath(); c.arc(mx, my, mr, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = 'rgba(40,110,70,.45)'; c.lineWidth = Math.max(1, mr * 0.02);
+  for (const [dx, dy, k] of [[-0.3, -0.2, 0.18], [0.25, 0.1, 0.12], [-0.05, 0.4, 0.1], [0.4, -0.35, 0.08]]) { c.beginPath(); c.arc(mx + dx * mr, my + dy * mr, k * mr, 0, Math.PI * 2); c.stroke(); }
+  const art = unitArtFA[game.key] || unitArt[game.key]; // the unit, in its lunar-assault configuration
+  if (art) { const img = art.front, ih = h * 0.82, iw = img.width * ih / img.height; c.globalAlpha = 0.85; c.drawImage(img, w * 0.74 - iw / 2, h - ih - h * 0.02, iw, ih); c.globalAlpha = 1; }
+  c.fillStyle = 'rgba(0,0,0,.18)'; for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1);
 }
 
 function enemyFrame(e) {
@@ -1112,7 +1183,7 @@ function update(dt) {
       if (e.lockT <= 0) { e.lockT = 0; if (e.mega) { e.mega = false; megaShot(e); } else if (e.dist <= e.T.range) enemyFire(e); }
     } else {
       e.fireCd -= dt;
-      if (e.fireCd <= 0) { e.fireCd = e.T.fireCd * rnd(.8, 1.3); if (e.dist <= e.T.range && e.mode !== 'ambush') { e.lockT = e.lockMax = e.T.boss ? 1.4 : 1.1; SFX.lockon(); } }
+      if (e.fireCd <= 0) { e.fireCd = e.T.fireCd * rnd(.8, 1.3) * DF().fire; if (e.dist <= e.T.range && e.mode !== 'ambush') { e.lockT = e.lockMax = (e.T.boss ? 1.4 : 1.1) * DF().lock; SFX.lockon(); } }
     }
     if (e.T.spawns) { e.spawnT -= dt; if (e.spawnT <= 0 && game.enemies.length < 6) { e.spawnT = rnd(12, 16); spawn(Math.random() < .6 ? 'vespa' : 'garm', e); say('要塞から艦載機が発進。'); } }
   }
@@ -1136,7 +1207,7 @@ function enemyFire(e) {
     let p = clamp(0.62 * (1 - e.dist / 1500), 0.12, 0.7) * (shots > 1 ? 0.6 : 1);
     if (game.dashT > 0) p *= brokenPart(1) ? 0.6 : 0.35;
     if (brokenPart(2)) p *= 1.15;
-    if (Math.random() < p) damagePlayer(e.T.dmg * (1 + 0.08 * (game.gw - 1) + 0.2 * game.loop));
+    if (Math.random() < p) damagePlayer(e.T.dmg * (1 + 0.08 * (game.gw - 1) + 0.2 * game.loop) * DF().dmg);
   }
 }
 function damagePlayer(d) {
@@ -1252,10 +1323,7 @@ function withdraw() {
   if (game.state !== 'play') return;
   if (game.quitT <= nowS) { game.quitT = nowS + 2.5; say('もう一度「離脱」を押すと作戦から離脱します。'); return; }
   game.state = 'over'; game.locks = []; game.selected = null; game.evade = null;
-  $('#bootTitle').textContent = '作戦から離脱しました';
-  $('#bootText').textContent = `${stage().name}・第${game.gw}波で離脱、スコア ${game.score}。機体を選んで再出撃できます。`;
-  $('#bBoot').textContent = '再出撃';
-  $('#boot').hidden = false;
+  toTitle(`前回：作戦離脱（${stage().name}）スコア ${game.score}`);
 }
 
 // ================= drawing: world =================
@@ -2142,6 +2210,9 @@ addEventListener('keydown', e => {
 });
 bIn.addEventListener('click', evade);
 addEventListener('resize', drawTitle);
+BOOT_DEFAULT.text = $('#bootText').textContent;
+$('#bEndOk').addEventListener('click', () => toTitle(`前回：全作戦完了　スコア ${game.score}（${DF().label}）`));
+addEventListener('resize', drawEnding);
 $('#bStart').addEventListener('click', () => { SFX.init(); SFX.green(); $('#title').hidden = true; $('#bBoot').focus(); });
 drawTitle();
 $('#bStart').focus();
@@ -2156,10 +2227,17 @@ const machinesEl = $('#machines');
 for (const [k, m] of Object.entries(MACHINES)) {
   const b = document.createElement('button');
   b.className = 'mc'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', k === game.key);
-  b.innerHTML = `<b>${m.name}</b><span>${m.desc} 装甲 ${m.armor}・同時捕捉 ${m.lockMax}</span>
+  b.innerHTML = `<b>${m.name} <small class="ty">${m.type}</small></b><span>${m.desc} 装甲 ${m.armor}・同時捕捉 ${m.lockMax}・回避 ${m.evade.cd}秒</span>
     <span class="wl"><em class="n">近</em> ${m.near.name}　<em class="m">中</em> ${m.mid.name}　<em class="f">遠</em> ${m.far.name}</span>`;
   b.addEventListener('click', () => { game.key = k; for (const x of machinesEl.children) x.setAttribute('aria-checked', x === b); });
   machinesEl.appendChild(b);
+}
+const diffsEl = $('#diffs');
+for (const [k, D] of Object.entries(DIFFS)) {
+  const b = document.createElement('button');
+  b.textContent = D.label; b.setAttribute('role', 'radio'); b.setAttribute('aria-pressed', k === diff);
+  b.addEventListener('click', () => { diff = k; try { localStorage.setItem('cockpitScramble.diff', k); } catch (e) {} for (const x of diffsEl.children) x.setAttribute('aria-pressed', x === b); });
+  diffsEl.appendChild(b);
 }
 const gainsEl = $('#gains');
 for (const g of [1, 1.5, 2]) {
